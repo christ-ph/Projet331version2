@@ -7,6 +7,7 @@ export const useMissionStore = defineStore('missions', {
         myApplications: [],
         applications: [],
         missionDetails: null,
+        messages: [], // ✅ CHAT
         loading: false,
         error: null,
     }),
@@ -21,10 +22,8 @@ export const useMissionStore = defineStore('missions', {
                 const response = await axios.get('/api/missions/available', {
                     params: filters
                 });
-                console.log("MISSIONS DISPONIBLES :", response.data);
                 this.missions = response.data;
             } catch (error) {
-                console.error("ERREUR FETCH AVAILABLE :", error);
                 this.error = error.response?.data?.msg || "Erreur lors du chargement des missions";
             } finally {
                 this.loading = false;
@@ -37,26 +36,27 @@ export const useMissionStore = defineStore('missions', {
             this.error = null;
             try {
                 const response = await axios.get(`/api/missions/${id}`);
-                console.log("DETAILS MISSION :", response.data);
                 this.missionDetails = response.data;
             } catch (error) {
-                console.error("ERREUR DETAILS MISSION :", error);
                 this.error = error.response?.data?.msg || "Erreur lors du chargement de la mission";
             } finally {
                 this.loading = false;
             }
         },
 
-        // ✅ FREELANCE — postuler
-        async applyToMission(payload) {
+        // ✅ FREELANCE — postuler (corrigé pour ton backend)
+        async applyToMission(missionId, payload) {
             this.loading = true;
             this.error = null;
             try {
-                const response = await axios.post('/api/missions/apply', payload);
-                console.log("CANDIDATURE ENVOYÉE :", response.data);
+                const response = await axios.post('/api/missions/apply', {
+                    mission_id: missionId,
+                    proposal: payload.proposal,
+                    proposed_budget: payload.proposed_budget
+                });
                 return response.data;
             } catch (error) {
-                console.error("ERREUR APPLY :", error);
+                this.error = error.response?.data?.msg || "Impossible de postuler à cette mission";
                 throw error;
             } finally {
                 this.loading = false;
@@ -69,10 +69,8 @@ export const useMissionStore = defineStore('missions', {
             this.error = null;
             try {
                 const response = await axios.get('/api/missions/applications/my');
-                console.log("MES CANDIDATURES :", response.data);
                 this.myApplications = response.data;
             } catch (error) {
-                console.error("ERREUR MES CANDIDATURES :", error);
                 this.error = error.response?.data?.msg || "Erreur lors du chargement des candidatures";
             } finally {
                 this.loading = false;
@@ -85,10 +83,8 @@ export const useMissionStore = defineStore('missions', {
             this.error = null;
             try {
                 const response = await axios.post('/api/missions', payload);
-                console.log("MISSION CRÉÉE :", response.data);
                 return response.data;
             } catch (error) {
-                console.error("ERREUR CREATE MISSION :", error);
                 throw error;
             } finally {
                 this.loading = false;
@@ -101,10 +97,8 @@ export const useMissionStore = defineStore('missions', {
             this.error = null;
             try {
                 const response = await axios.put(`/api/missions/${id}`, payload);
-                console.log("MISSION MODIFIÉE :", response.data);
                 return response.data;
             } catch (error) {
-                console.error("ERREUR UPDATE MISSION :", error);
                 throw error;
             } finally {
                 this.loading = false;
@@ -117,10 +111,8 @@ export const useMissionStore = defineStore('missions', {
             this.error = null;
             try {
                 const response = await axios.delete(`/api/missions/${id}`);
-                console.log("MISSION SUPPRIMÉE :", response.data);
                 return response.data;
             } catch (error) {
-                console.error("ERREUR DELETE MISSION :", error);
                 throw error;
             } finally {
                 this.loading = false;
@@ -133,10 +125,8 @@ export const useMissionStore = defineStore('missions', {
             this.error = null;
             try {
                 const response = await axios.get('/api/missions/my');
-                console.log("MISSIONS CLIENT :", response.data);
                 this.missions = response.data;
             } catch (error) {
-                console.error("ERREUR MISSIONS CLIENT :", error);
                 this.error = error.response?.data?.msg || "Erreur lors du chargement des missions client";
             } finally {
                 this.loading = false;
@@ -149,10 +139,8 @@ export const useMissionStore = defineStore('missions', {
             this.error = null;
             try {
                 const response = await axios.get(`/api/missions/${id}/applications`);
-                console.log("CANDIDATURES REÇUES :", response.data);
                 this.applications = response.data;
             } catch (error) {
-                console.error("ERREUR CANDIDATURES REÇUES :", error);
                 this.error = error.response?.data?.msg || "Erreur lors du chargement des candidatures";
             } finally {
                 this.loading = false;
@@ -161,12 +149,52 @@ export const useMissionStore = defineStore('missions', {
 
         // ✅ CLIENT — accepter une candidature
         async acceptApplication(id) {
-            return axios.put(`/api/missions/applications/${id}/accept`);
+            try {
+                const response = await axios.put(`/api/missions/applications/${id}/accept`);
+                return response.data;
+            } catch (error) {
+                throw error;
+            }
         },
 
         // ✅ CLIENT — refuser une candidature
         async rejectApplication(id) {
-            return axios.put(`/api/missions/applications/${id}/reject`);
+            try {
+                const response = await axios.put(`/api/missions/applications/${id}/reject`);
+                return response.data;
+            } catch (error) {
+                throw error;
+            }
+        },
+
+        // ✅ CHAT — récupérer les messages
+        async fetchMessages(missionId) {
+            this.loading = true;
+            this.error = null;
+            try {
+                const response = await axios.get(`/api/chat/${missionId}`);
+                this.messages = response.data;
+            } catch (error) {
+                this.error = error.response?.data?.msg || "Erreur lors du chargement des messages";
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        // ✅ CHAT — envoyer un message
+        async sendMessage(missionId, content) {
+            this.error = null;
+            try {
+                const response = await axios.post(`/api/chat/${missionId}`, { content });
+
+                // Mise à jour instantanée
+                this.messages.push(response.data);
+
+                return response.data;
+            } catch (error) {
+                this.error = error.response?.data?.msg || "Erreur lors de l'envoi du message";
+                throw error;
+            }
         }
     }
 });

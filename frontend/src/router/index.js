@@ -17,6 +17,7 @@ import MissionDetailsView from '@/views/MissionDetailsView.vue';
 import CreateMissionView from '@/views/CreateMissionView.vue';
 import ClientMissionView from '@/views/ClientMissionView.vue';
 import ClientMissionDetailView from '@/views/ClientMissionDetailView.vue';
+import ApplyMissionView from '@/views/ApplyMissionView.vue';
 
 const routes = [
 
@@ -29,7 +30,7 @@ const routes = [
         path: '/dashboard', 
         name: 'Dashboard', 
         component: DashboardView, 
-        meta: { requiresAuth: true, roles: ['FREELANCE','CLIENT'] } 
+        meta: { requiresAuth: true, roles: ['FREELANCE','CLIENT','USER'] } 
     },
  {
   path: '/missions',
@@ -41,6 +42,12 @@ const routes = [
   path: '/missions/:id',
   name: 'MissionDetails',
   component: MissionDetailsView,
+  meta: { requiresAuth: true, roles: ['FREELANCE'] }
+},
+{
+  path: '/missions/:id/apply',
+  name: 'ApplyMission',
+  component: ApplyMissionView,
   meta: { requiresAuth: true, roles: ['FREELANCE'] }
 },
 {

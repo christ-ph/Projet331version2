@@ -49,9 +49,16 @@
             Voir détails
           </button>
 
-          <button class="apply-btn" @click="goToApply(mission.id)">
+          <!-- ✅ Masquer si déjà postulé -->
+          <button 
+            v-if="!alreadyApplied(mission.id)" 
+            class="apply-btn" 
+            @click="goToApply(mission.id)"
+          >
             Postuler
           </button>
+
+          <p v-else class="already-applied">✅ Déjà postulé</p>
         </div>
       </div>
     </div>
@@ -60,14 +67,22 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue';
 import { useMissionStore } from '@/stores/missions';
 import { useRouter } from 'vue-router';
 
 const missionsStore = useMissionStore();
 const router = useRouter();
 
-// Charger les missions dès l'arrivée sur la page
-missionsStore.fetchAvailableMissions();
+// ✅ Charger missions + candidatures
+onMounted(async () => {
+  await missionsStore.fetchAvailableMissions();
+  await missionsStore.fetchMyApplications();
+});
+
+// ✅ Vérifier si déjà postulé
+const alreadyApplied = (missionId) =>
+  missionsStore.myApplications.some(app => app.mission_id === missionId);
 
 // Aller vers les détails
 function goToDetails(id) {
@@ -204,5 +219,11 @@ h1 {
 
 .apply-btn:hover {
   background: #059669;
+}
+
+.already-applied {
+  color: #065f46;
+  font-weight: 600;
+  padding-top: 10px;
 }
 </style>

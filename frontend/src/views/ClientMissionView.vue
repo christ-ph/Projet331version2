@@ -24,7 +24,7 @@
       class="no-missions"
     >
       <p>Vous n'avez pas encore créé de mission.</p>
-      <button @click="router.push('/client/missions/create')" class="create-btn">
+      <button @click="router.push('/missions/create')" class="create-btn">
         Créer ma première mission
       </button>
     </div>
@@ -39,7 +39,25 @@
         :key="mission.id" 
         class="mission-card"
       >
-        <h3>{{ mission.title }}</h3>
+        <div class="header-mission">
+          <h3>{{ mission.title }}</h3>
+
+          <!-- ✅ Badge candidatures -->
+          <span 
+            v-if="applicationsCount[mission.id] > 0" 
+            class="badge"
+          >
+            {{ applicationsCount[mission.id] }} candidature(s)
+          </span>
+
+          <span 
+            v-if="pendingCount[mission.id] > 0" 
+            class="badge-new"
+          >
+            Nouveau !
+          </span>
+        </div>
+
         <p class="desc">{{ mission.description }}</p>
 
         <div class="info">
@@ -61,15 +79,29 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue';
+import { onMounted, reactive } from 'vue';
 import { useMissionStore } from '@/stores/missions';
 import { useRouter } from 'vue-router';
 
 const missionsStore = useMissionStore();
 const router = useRouter();
 
-onMounted(() => {
-  missionsStore.fetchClientMissions();
+// ✅ Stockage local du nombre de candidatures
+const applicationsCount = reactive({});
+const pendingCount = reactive({});
+
+onMounted(async () => {
+  await missionsStore.fetchClientMissions();
+
+  // ✅ Pour chaque mission → charger ses candidatures
+  for (const mission of missionsStore.missions) {
+    await missionsStore.fetchMissionApplications(mission.id);
+
+    const apps = missionsStore.applications;
+
+    applicationsCount[mission.id] = apps.length;
+    pendingCount[mission.id] = apps.filter(a => a.status === "PENDING").length;
+  }
 });
 
 function goToDetails(id) {
@@ -84,7 +116,6 @@ function goToDetails(id) {
   font-family: "Segoe UI", sans-serif;
 }
 
-/* ✅ Header + bouton */
 .header-row {
   display: flex;
   justify-content: space-between;
@@ -112,32 +143,12 @@ h1 {
   background: #2563eb;
 }
 
-/* ✅ Messages */
-.loading {
-  font-size: 18px;
-  color: #555;
-}
-
-.error {
-  color: #dc2626;
-  font-weight: bold;
-  margin-bottom: 20px;
-}
-
-.no-missions {
-  text-align: center;
-  margin-top: 40px;
-  color: #555;
-}
-
-/* ✅ Grille des missions */
 .missions-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 20px;
 }
 
-/* ✅ Carte mission */
 .mission-card {
   background: white;
   padding: 20px;
@@ -148,22 +159,29 @@ h1 {
   gap: 12px;
 }
 
-.mission-card h3 {
-  font-size: 20px;
-  color: #1f2937;
+.header-mission {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.desc {
-  color: #4b5563;
-  font-size: 14px;
+.badge {
+  background: #1f2937;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
 }
 
-.info p {
-  margin: 4px 0;
-  color: #374151;
+.badge-new {
+  background: #dc2626;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: bold;
 }
 
-/* ✅ Bouton détails */
 .details-btn {
   margin-top: 10px;
   padding: 10px;
