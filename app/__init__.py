@@ -1,0 +1,38 @@
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager
+from flask_cors import CORS
+from app.config import config
+
+# initialisation des extention
+db = SQLAlchemy()
+migrate = Migrate()
+bcrypt = Bcrypt()
+jwt = JWTManager()
+
+
+def create_app():
+    app = Flask(__name__)
+    app.config.from_object(config)
+
+    # initialisation eds extension avec l'app
+    db.init_app(app)
+    migrate.init_app(app, db)
+    bcrypt.init_app(app)
+    jwt.init_app(app)
+    CORS(app)
+    # Enregistrement de Blue Sprints
+    from app.auth.routes import auth_bp
+    app.register_blueprint(auth_bp, url_prefix='/auth') # J'ajoute /auth ici pour la clarté
+
+    from app.profiles.routes import profile_bp
+    app.register_blueprint(profile_bp, url_prefix='/api/profiles')
+    
+    # NOUVEAU : Enregistrement du Blueprint des Missions
+    from app.missions.routes import missions_bp
+    app.register_blueprint(missions_bp) 
+    
+    return app
+    
