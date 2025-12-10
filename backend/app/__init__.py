@@ -32,7 +32,10 @@ def create_app():
     
     # NOUVEAU : Enregistrement du Blueprint des Missions
     from app.missions.routes import missions_bp
-    app.register_blueprint(missions_bp) 
+    app.register_blueprint(missions_bp)
+
+    from app.chats.routes import chat_bp
+    app.register_blueprint(chat_bp) 
     
     return app
     

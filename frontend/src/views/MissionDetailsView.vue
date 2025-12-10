@@ -1,7 +1,6 @@
 <template>
   <div class="mission-details-page">
 
-    <!-- Titre -->
     <h1>Détails de la mission</h1>
 
     <!-- Chargement -->
@@ -16,7 +15,7 @@
 
     <!-- Mission introuvable -->
     <div 
-      v-if="!missionsStore.loading && !missionsStore.missionDetails" 
+      v-if="!missionsStore.loading && !mission" 
       class="no-mission"
     >
       <p>Mission introuvable.</p>
@@ -24,20 +23,35 @@
 
     <!-- Carte des détails -->
     <div 
-      v-if="missionsStore.missionDetails" 
+      v-if="mission" 
       class="mission-card"
     >
-      <h2>{{ missionsStore.missionDetails.title }}</h2>
+      <h2>{{ mission.title }}</h2>
 
-      <p class="description">{{ missionsStore.missionDetails.description }}</p>
+      <p class="description">{{ mission.description }}</p>
 
       <div class="info-block">
-        <p><span class="label">Budget :</span> {{ missionsStore.missionDetails.budget }} €</p>
-        <p><span class="label">Durée :</span> {{ missionsStore.missionDetails.duration }}</p>
-        <p><span class="label">Compétences :</span> {{ missionsStore.missionDetails.required_skills }}</p>
+        <p><span class="label">Budget :</span> {{ mission.budget }} €</p>
+        <p><span class="label">Durée :</span> {{ mission.duration }}</p>
+        <p><span class="label">Compétences :</span> {{ mission.required_skills }}</p>
       </div>
 
-      <button class="apply-btn" @click="goToApply">
+      <!-- ✅ Mission non disponible -->
+      <div v-if="mission.status !== 'PUBLISHED'" class="status-msg closed">
+        ❌ Cette mission n'est plus disponible.
+      </div>
+
+      <!-- ✅ Déjà postulé -->
+      <div v-else-if="alreadyApplied" class="status-msg applied">
+        ✅ Vous avez déjà postulé à cette mission.
+      </div>
+
+      <!-- ✅ Bouton Postuler -->
+      <button 
+        v-else 
+        class="apply-btn" 
+        @click="goToApply"
+      >
         Postuler à cette mission
       </button>
     </div>
@@ -46,6 +60,7 @@
 </template>
 
 <script setup>
+import { onMounted, computed } from 'vue';
 import { useMissionStore } from '@/stores/missions';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -55,16 +70,27 @@ const router = useRouter();
 
 const missionId = route.params.id;
 
-// Charger les détails
-missionsStore.fetchMissionDetails(missionId);
+// ✅ Charger mission + candidatures
+onMounted(async () => {
+  await missionsStore.fetchMissionDetails(missionId);
+  await missionsStore.fetchMyApplications();
+});
 
+// ✅ Mission actuelle
+const mission = computed(() => missionsStore.missionDetails);
+
+// ✅ Vérifier si déjà postulé
+const alreadyApplied = computed(() =>
+  missionsStore.myApplications.some(app => app.mission_id == missionId)
+);
+
+// ✅ Aller vers la page de candidature
 function goToApply() {
   router.push(`/missions/${missionId}/apply`);
 }
 </script>
 
 <style scoped>
-/* ✅ Page globale */
 .mission-details-page {
   margin-top: 100px;
   padding: 20px;
@@ -74,14 +100,12 @@ function goToApply() {
   align-items: center;
 }
 
-/* ✅ Titre */
 h1 {
   font-size: 30px;
   margin-bottom: 25px;
   color: #1f2937;
 }
 
-/* ✅ Carte */
 .mission-card {
   background: white;
   padding: 30px;
@@ -94,20 +118,17 @@ h1 {
   gap: 20px;
 }
 
-/* ✅ Sous-titre */
 .mission-card h2 {
   font-size: 24px;
   color: #111827;
 }
 
-/* ✅ Description */
 .description {
   color: #4b5563;
   line-height: 1.6;
   font-size: 15px;
 }
 
-/* ✅ Bloc d’infos */
 .info-block {
   background: #f9fafb;
   padding: 15px;
@@ -126,7 +147,6 @@ h1 {
   color: #1f2937;
 }
 
-/* ✅ Bouton Postuler */
 .apply-btn {
   padding: 12px;
   background: #10b981;
@@ -143,7 +163,23 @@ h1 {
   background: #059669;
 }
 
-/* ✅ Messages */
+.status-msg {
+  padding: 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.applied {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.closed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .loading {
   font-size: 18px;
   color: #555;

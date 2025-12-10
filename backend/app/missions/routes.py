@@ -1,9 +1,12 @@
 from flask import Blueprint, request, jsonify
 from app import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.models import Mission, Application, MissionStatus, User, ApplicationStatus, Profile
+from app.models import (
+    Mission, Application, MissionStatus, User,
+    ApplicationStatus, Profile
+)
 from app.utils import role_required
-from sqlalchemy import select, and_
+from sqlalchemy import select
 
 missions_bp = Blueprint('missions', __name__, url_prefix='/api/missions')
 
@@ -88,9 +91,12 @@ def delete_mission(mission_id):
     if mission.client_id != user_id:
         return jsonify({"msg": "Accès refusé"}), 403
 
-    # On peut empêcher la suppression si une candidature ACCEPTÉE existe
+    # Empêcher suppression si une candidature ACCEPTÉE existe
     accepted = db.session.execute(
-        select(Application).filter_by(mission_id=mission_id, status=ApplicationStatus.ACCEPTED)
+        select(Application).filter_by(
+            mission_id=mission_id,
+            status=ApplicationStatus.ACCEPTED
+        )
     ).scalars().first()
 
     if accepted:
@@ -172,7 +178,10 @@ def apply_to_mission():
 
     # Vérifier si déjà postulé
     existing = db.session.execute(
-        select(Application).filter_by(mission_id=mission_id, freelance_id=user_id)
+        select(Application).filter_by(
+            mission_id=mission_id,
+            freelance_id=user_id
+        )
     ).scalars().first()
 
     if existing:
@@ -209,7 +218,7 @@ def get_my_applications():
 
 
 # ---------------------------------------------------------
-# ✅ 9. CLIENT — Voir les candidatures reçues pour une mission
+# ✅ 9. CLIENT — Voir les candidatures reçues
 # ---------------------------------------------------------
 @missions_bp.route('/<int:mission_id>/applications', methods=['GET'])
 @jwt_required()
@@ -249,8 +258,23 @@ def accept_application(app_id):
     if mission.client_id != user_id:
         return jsonify({"msg": "Accès refusé"}), 403
 
+    # ✅ Assigner le freelance
+    mission.assigned_freelance_id = app.freelance_id
+    mission.status = MissionStatus.IN_PROGRESS
+
+    # ✅ Accepter cette candidature
     app.status = ApplicationStatus.ACCEPTED
-    mission.status = MissionStatus.CLOSED
+
+    # ✅ Rejeter toutes les autres
+    others = db.session.execute(
+        select(Application).filter(
+            Application.mission_id == mission.id,
+            Application.id != app_id
+        )
+    ).scalars().all()
+
+    for o in others:
+        o.status = ApplicationStatus.REJECTED
 
     db.session.commit()
 
@@ -276,7 +300,6 @@ def reject_application(app_id):
         return jsonify({"msg": "Accès refusé"}), 403
 
     app.status = ApplicationStatus.REJECTED
-
     db.session.commit()
 
     return jsonify({"msg": "Candidature rejetée"}), 200
