@@ -17,6 +17,7 @@ const login = async () => {
 
   try {
     await authStore.login(form.value.email, form.value.password);
+
     successMessage.value = "Connexion réussie !";
 
     setTimeout(() => {
@@ -24,11 +25,22 @@ const login = async () => {
     }, 300);
 
   } catch (error) {
+
+    // ✅ Cas spécial : email non vérifié
+    if (error.type === 'unverified') {
+      router.push({
+        path: '/verify-email',
+        query: { email: form.value.email }
+      });
+      return;
+    }
+
     const msg = error.response?.data?.msg || "Erreur de connexion";
     errorMessage.value = msg;
   }
 };
 </script>
+
 
 <template>
   <div class="login-container">

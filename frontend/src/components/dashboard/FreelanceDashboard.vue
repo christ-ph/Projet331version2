@@ -1,228 +1,231 @@
 <script setup>
-import { useAuthStore } from '@/stores/auth';
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
+import { useProfileStore } from '@/stores/profile';
+import router from '@/router';
 
-const authStore = useAuthStore();
+const profileStore = useProfileStore();
 
-/* ✅ MOCK DATA — à remplacer plus tard par ton backend */
-const stats = ref({
-  missions_available: 12,
-  applications_sent: 5,
-  portfolio_items: 3,
+const loading = ref(true);
+const saving = ref(false);
+const errorMessage = ref('');
+const successMessage = ref('');
+
+const form = ref({
+  full_name: '',
+  title: '',
+  description: '',
+  skills: '',
+  languages: '',
+  hourly_rate: '',
+  experience_years: '',
+  availability: ''
 });
 
-const missions = ref([
-  {
-    id: 1,
-    title: "Développer une API Flask",
-    budget: "300€ - 500€",
-    skills: ["Python", "Flask", "REST"],
-  },
-  {
-    id: 2,
-    title: "Créer un site vitrine Vue.js",
-    budget: "200€ - 350€",
-    skills: ["Vue.js", "CSS", "Frontend"],
-  },
-]);
+onMounted(async () => {
+  loading.value = true;
 
-const applications = ref([
-  {
-    id: 1,
-    mission: "Refonte d’un dashboard admin",
-    status: "En attente",
-  },
-  {
-    id: 2,
-    mission: "Développement d’un chatbot IA",
-    status: "Acceptée",
-  },
-]);
+  try {
+    const profile = await profileStore.getMyProfile();
+
+    if (!profile || profile.type !== "freelance") {
+      router.push('/dashboard');
+      return;
+    }
+
+    // ✅ Pré-remplir le formulaire
+    form.value.full_name = profile.full_name;
+    form.value.title = profile.title;
+    form.value.description = profile.description;
+    form.value.skills = profile.skills?.join(', ') || '';
+    form.value.languages = profile.languages?.join(', ') || '';
+    form.value.hourly_rate = profile.hourly_rate;
+    form.value.experience_years = profile.experience_years;
+    form.value.availability = profile.availability;
+
+  } catch (e) {
+    errorMessage.value = "Impossible de charger votre profil.";
+  }
+
+  loading.value = false;
+});
+
+const saveProfile = async () => {
+  saving.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+
+  try {
+    await profileStore.updateProfile({
+      type: "freelance",
+      full_name: form.value.full_name,
+      title: form.value.title,
+      description: form.value.description,
+      skills: form.value.skills.split(',').map(s => s.trim()),
+      languages: form.value.languages.split(',').map(s => s.trim()),
+      hourly_rate: form.value.hourly_rate,
+      experience_years: form.value.experience_years,
+      availability: form.value.availability
+    });
+
+    successMessage.value = "Profil mis à jour avec succès !";
+
+  } catch (e) {
+    errorMessage.value = "Erreur lors de la mise à jour du profil.";
+  }
+
+  saving.value = false;
+};
 </script>
 
 <template>
-  <div class="dashboard-container">
+  <div class="profile-container">
 
-    <!-- ✅ HEADER -->
-    <header class="dashboard-header">
-      <h2>Bienvenue, {{ authStore.user.email }}</h2>
-      <p class="subtitle">Voici un aperçu de votre activité freelance</p>
-    </header>
+    <div class="profile-box">
 
-    <!-- ✅ STATS -->
-    <section class="stats-grid">
-      <div class="stat-card">
-        <h3>{{ stats.missions_available }}</h3>
-        <p>Missions disponibles</p>
-      </div>
+      <h2 class="title">Mon Profil Freelance</h2>
 
-      <div class="stat-card">
-        <h3>{{ stats.applications_sent }}</h3>
-        <p>Candidatures envoyées</p>
-      </div>
+      <div v-if="loading" class="loading">Chargement...</div>
 
-      <div class="stat-card">
-        <h3>{{ stats.portfolio_items }}</h3>
-        <p>Éléments du portfolio</p>
-      </div>
-    </section>
+      <form v-else @submit.prevent="saveProfile" class="profile-form">
 
-    <!-- ✅ MISSIONS DISPONIBLES -->
-    <section class="section">
-      <h3 class="section-title">🔥 Missions disponibles</h3>
+        <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+        <p v-if="successMessage" class="alert success">{{ successMessage }}</p>
 
-      <div class="mission-list">
-        <div v-for="m in missions" :key="m.id" class="mission-card">
-          <h4>{{ m.title }}</h4>
-          <p class="budget">{{ m.budget }}</p>
-          <div class="skills">
-            <span v-for="s in m.skills" :key="s" class="skill">{{ s }}</span>
-          </div>
+        <div class="form-group">
+          <label>Nom complet *</label>
+          <input v-model="form.full_name" required />
         </div>
-      </div>
-    </section>
 
-    <!-- ✅ CANDIDATURES -->
-    <section class="section">
-      <h3 class="section-title">📌 Vos candidatures</h3>
-
-      <div class="application-list">
-        <div v-for="a in applications" :key="a.id" class="application-card">
-          <h4>{{ a.mission }}</h4>
-          <p class="status" :class="a.status.toLowerCase()">{{ a.status }}</p>
+        <div class="form-group">
+          <label>Titre *</label>
+          <input v-model="form.title" required placeholder="Ex: Développeur Fullstack" />
         </div>
-      </div>
-    </section>
 
-    <!-- ✅ PORTFOLIO -->
-    <section class="section">
-      <h3 class="section-title">🎨 Portfolio</h3>
-      <button class="portfolio-btn">Gérer mon portfolio</button>
-    </section>
+        <div class="form-group">
+          <label>Description *</label>
+          <textarea v-model="form.description" required></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Compétences *</label>
+          <input v-model="form.skills" placeholder="Ex: Python, Vue.js" />
+        </div>
+
+        <div class="form-group">
+          <label>Langues *</label>
+          <input v-model="form.languages" placeholder="Ex: Français, Anglais" />
+        </div>
+
+        <div class="form-group">
+          <label>Taux horaire (€) *</label>
+          <input type="number" v-model="form.hourly_rate" required />
+        </div>
+
+        <div class="form-group">
+          <label>Années d'expérience *</label>
+          <input type="number" v-model="form.experience_years" required />
+        </div>
+
+        <div class="form-group">
+          <label>Disponibilité *</label>
+          <input v-model="form.availability" placeholder="Ex: 20h/semaine" />
+        </div>
+
+        <button class="btn" :disabled="saving">
+          <span v-if="saving">Enregistrement...</span>
+          <span v-else>Mettre à jour</span>
+        </button>
+
+      </form>
+
+    </div>
 
   </div>
 </template>
 
 <style scoped>
-/* ✅ Layout général */
-.dashboard-container {
+.profile-container {
   width: 100%;
-  max-width: 900px;
-  margin: auto;
-  padding: 20px;
-  font-family: sans-serif;
+  min-height: 100vh;
+  background: #f3f4f6;
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px;
 }
 
-/* ✅ Header */
-.dashboard-header {
-  text-align: center;
-  margin-bottom: 30px;
+.profile-box {
+  background: #ffffff;
+  width: 600px;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
 }
-.subtitle {
-  color: #666;
+
+.title {
+  margin-bottom: 20px;
+  font-size: 26px;
+  color: #1f2937;
+  text-align: center;
+}
+
+.loading {
+  text-align: center;
+  padding: 20px;
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.alert {
+  padding: 10px;
+  border-radius: 6px;
   font-size: 14px;
 }
-
-/* ✅ Stats */
-.stats-grid {
-  display: flex;
-  justify-content: space-between;
-  gap: 15px;
-  margin-bottom: 30px;
+.alert.error {
+  background: #fee2e2;
+  color: #b91c1c;
 }
-.stat-card {
-  flex: 1;
-  background: #f5f7fa;
-  padding: 20px;
-  border-radius: 10px;
-  text-align: center;
-}
-.stat-card h3 {
-  font-size: 28px;
-  margin: 0;
-  color: #2c3e50;
-}
-.stat-card p {
-  margin: 5px 0 0;
-  color: #555;
+.alert.success {
+  background: #dcfce7;
+  color: #166534;
 }
 
-/* ✅ Sections */
-.section {
-  margin-bottom: 30px;
+.form-group label {
+  font-size: 14px;
+  color: #374151;
+  margin-bottom: 5px;
+  display: block;
 }
-.section-title {
-  margin-bottom: 10px;
-  font-size: 20px;
-  color: #2c3e50;
-}
-
-/* ✅ Missions */
-.mission-list {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-.mission-card {
-  background: white;
-  padding: 15px;
-  border-radius: 10px;
-  border: 1px solid #eee;
-}
-.mission-card h4 {
-  margin: 0 0 5px;
-}
-.budget {
-  color: #27ae60;
-  font-weight: bold;
-}
-.skills {
-  margin-top: 10px;
-}
-.skill {
-  background: #eef2ff;
-  color: #3b5bdb;
-  padding: 5px 10px;
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
   border-radius: 6px;
-  margin-right: 5px;
-  font-size: 12px;
+  padding: 10px;
+  font-size: 14px;
+}
+.form-group textarea {
+  height: 80px;
+  resize: none;
 }
 
-/* ✅ Applications */
-.application-list {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-.application-card {
-  background: white;
-  padding: 15px;
-  border-radius: 10px;
-  border: 1px solid #eee;
-}
-.status {
-  font-weight: bold;
-}
-.status.en\ attente {
-  color: #f39c12;
-}
-.status.acceptée {
-  color: #27ae60;
-}
-.status.rejetée {
-  color: #e74c3c;
-}
-
-/* ✅ Portfolio */
-.portfolio-btn {
-  padding: 10px 20px;
-  background: #3b5bdb;
+.btn {
+  background: #3b82f6;
   color: white;
   border: none;
-  border-radius: 8px;
+  padding: 12px;
+  border-radius: 6px;
   cursor: pointer;
+  font-size: 16px;
 }
-.portfolio-btn:hover {
-  background: #4c6ef5;
+.btn:hover {
+  background: #2563eb;
+}
+.btn:disabled {
+  background: #93c5fd;
+  cursor: not-allowed;
 }
 </style>

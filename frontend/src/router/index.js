@@ -18,6 +18,7 @@ import CreateMissionView from '@/views/CreateMissionView.vue';
 import ClientMissionView from '@/views/ClientMissionView.vue';
 import ClientMissionDetailView from '@/views/ClientMissionDetailView.vue';
 import ApplyMissionView from '@/views/ApplyMissionView.vue';
+import PortfolioView from '@/views/PortfolioVue.vue'
 
 const routes = [
 
@@ -55,6 +56,12 @@ const routes = [
   name: 'CreateMission',
   component: CreateMissionView,
   meta: { requiresAuth: true, roles: ['CLIENT'] }
+},
+{
+  path: '/portfolio',
+  name: 'PORTFOLIO',
+  component: PortfolioView,
+  meta: {requiresAuth: true,role: ['CLIENT']}
 },
   {
   path: '/client/missions',

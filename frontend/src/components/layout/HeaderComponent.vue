@@ -1,14 +1,19 @@
 <script setup>
-import { useAuthStore } from '@/stores/auth';
 import { computed } from 'vue';
+import { useAuthStore } from '@/stores/auth';
+import { useProfileStore } from '@/stores/profile';
 import router from '@/router';
 
 const authStore = useAuthStore();
+const profileStore = useProfileStore();
 
-// ✅ Rôle de l'utilisateur
+// ✅ Rôle de l'utilisateur (réactif)
 const role = computed(() => authStore.user?.role || null);
 
-// ✅ Menu dynamique selon le rôle
+// ✅ Le user a-t-il un profil ?
+const hasProfile = computed(() => profileStore.hasProfile);
+
+// ✅ Menu dynamique selon le rôle + profil existant
 const menuItems = computed(() => {
   if (!role.value) return [];
 
@@ -18,6 +23,7 @@ const menuItems = computed(() => {
       { label: "Missions", path: "/missions" },
       { label: "Candidatures", path: "/applications" },
       { label: "Portfolio", path: "/portfolio" },
+      { label: "Mon Profil", path: "/freelance-profile" },
     ];
   }
 
@@ -27,6 +33,7 @@ const menuItems = computed(() => {
       { label: "Créer une mission", path: "/missions/create" },
       { label: "Mes missions", path: "/client/missions" },
       { label: "Freelances", path: "/freelancers" },
+      { label: "Mon Profil", path: "/client-profile" },
     ];
   }
 
@@ -35,9 +42,9 @@ const menuItems = computed(() => {
 
 // ✅ Déconnexion
 const logout = () => {
-  authStore.logout();
-  router.push("/login");
+  authStore.logout(); // le store gère déjà la redirection
 };
+// alert(!role.value+" et "+!hasProfile.value);
 </script>
 
 <template>
@@ -77,7 +84,7 @@ const logout = () => {
 .app-header {
   width: 100%;
   height: 70px;
-  background: #1f2937; /* gris foncé moderne */
+  background: #1f2937;
   color: white;
   display: flex;
   align-items: center;
@@ -98,7 +105,7 @@ const logout = () => {
   cursor: pointer;
 }
 .logo span {
-  color: #3b82f6; /* bleu moderne */
+  color: #3b82f6;
 }
 
 /* ✅ Menu */

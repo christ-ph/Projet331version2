@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import axios from 'axios';
 
-// Récupération de l'état initial
 const storedToken = localStorage.getItem('access_token');
 const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
 
@@ -11,7 +10,7 @@ export const useAuthStore = defineStore('auth', {
         isAuthenticated: !!storedToken,
         user: storedUser,
         isLoading: false,
-        userLoaded: false,   // ✅ important pour éviter la boucle infinie
+        userLoaded: false,
     }),
 
     actions: {
@@ -44,6 +43,15 @@ export const useAuthStore = defineStore('auth', {
                 return true;
 
             } catch (error) {
+
+                // ✅ Si email non vérifié → on ne logout pas
+                if (error.response?.status === 403) {
+                    throw {
+                        type: 'unverified',
+                        message: 'Veuillez vérifier votre email.'
+                    };
+                }
+
                 this.logout(false);
                 throw error;
 
@@ -52,7 +60,37 @@ export const useAuthStore = defineStore('auth', {
             }
         },
 
-        // ✅ PROFILE — NE DOIT PLUS FAIRE LOGOUT EN CAS DE 401
+        // ✅ REGISTER (retourne user_id pour la page OTP)
+        async register(email, password) {
+            try {
+                const response = await axios.post('/auth/register', { email, password });
+                return response.data; // contient user_id
+            } catch (error) {
+                throw error;
+            }
+        },
+
+        // ✅ VERIFY EMAIL
+        async verifyEmail(email, code) {
+            try {
+                const response = await axios.post('/auth/verify-email', { email, code });
+                return response.data;
+            } catch (error) {
+                throw error;
+            }
+        },
+
+        // ✅ RESEND CODE
+        async resendCode(email) {
+            try {
+                const response = await axios.post('/auth/resend-code', { email });
+                return response.data;
+            } catch (error) {
+                throw error;
+            }
+        },
+
+        // ✅ PROFILE
         async profile() {
             try {
                 const response = await axios.get('/auth/user-data');
@@ -60,28 +98,15 @@ export const useAuthStore = defineStore('auth', {
                 this.user = response.data.user;
                 this.userLoaded = true;
                 this.isAuthenticated = true;
+
                 localStorage.setItem('user', JSON.stringify(this.user));
 
                 return response.data;
 
             } catch (error) {
-
-                // ✅ IMPORTANT : éviter la boucle infinie
                 this.userLoaded = true;
                 this.isAuthenticated = true;
-                // ✅ On ne logout PAS ici
-                // Le guard décidera quoi faire
-
                 return null;
-            }
-        },
-
-        // ✅ REGISTER
-        async register(email, password) {
-            try {
-                await axios.post('/auth/register', { email, password });
-            } catch (error) {
-                throw error;
             }
         },
 

@@ -1,27 +1,64 @@
 <script setup>
 import { ref } from 'vue';
-import axios from 'axios';
+import { useProfileStore } from '@/stores/profile';
 import router from '@/router';
 
-const form = ref({
-  first_name: '',
-  last_name: '',
-  bio: '',
-  skills: '',
-  is_freelancer: false
-});
+const profileStore = useProfileStore();
+
+const step = ref(1); // 1 = choix du type, 2 = formulaire
+
+const type = ref(null); // "freelance" ou "client"
 
 const loading = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
 
+/* ✅ Formulaire Freelance */
+const freelanceForm = ref({
+  full_name: '',
+  title: '',
+  description: '',
+  skills: '',
+  languages: '',
+  hourly_rate: '',
+  experience_years: '',
+  availability: ''
+});
+
+/* ✅ Formulaire Client */
+const clientForm = ref({
+  client_type: '',
+  fullname: '',
+  company_name: '',
+  company_website: '',
+  industry: ''
+});
+
+/* ✅ Choix du type */
+const selectType = (selected) => {
+  type.value = selected;
+  step.value = 2;
+};
+
+/* ✅ Soumission du profil */
 const submitProfile = async () => {
   loading.value = true;
   errorMessage.value = '';
   successMessage.value = '';
 
   try {
-    await axios.post('/api/profiles/', form.value);
+    if (type.value === "freelance") {
+      await profileStore.createFreelanceProfile({
+        ...freelanceForm.value,
+        skills: freelanceForm.value.skills.split(',').map(s => s.trim()),
+        languages: freelanceForm.value.languages.split(',').map(s => s.trim())
+      });
+    } else {
+      await profileStore.createClientProfile({
+        ...clientForm.value
+      });
+    }
+
     successMessage.value = "Profil créé avec succès !";
 
     setTimeout(() => {
@@ -40,57 +77,120 @@ const submitProfile = async () => {
   <div class="profile-container">
 
     <div class="profile-box">
-      <h2 class="title">Créer votre profil</h2>
 
-      <form @submit.prevent="submitProfile" class="profile-form">
+      <!-- ✅ ÉTAPE 1 : CHOIX DU TYPE -->
+      <div v-if="step === 1" class="step-choose">
+        <h2 class="title">Créer votre profil</h2>
+        <p class="subtitle">Choisissez votre type de compte</p>
 
-        <!-- ✅ Messages -->
+        <button class="btn btn-type" @click="selectType('freelance')">
+          👨‍💻 Je suis Freelance
+        </button>
+
+        <button class="btn btn-type" @click="selectType('client')">
+          🧑‍💼 Je suis Client
+        </button>
+      </div>
+
+      <!-- ✅ ÉTAPE 2 : FORMULAIRE FREELANCE -->
+      <form v-if="step === 2 && type === 'freelance'" @submit.prevent="submitProfile" class="profile-form">
+
+        <h2 class="title">Profil Freelance</h2>
+
         <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
         <p v-if="successMessage" class="alert success">{{ successMessage }}</p>
 
-        <!-- ✅ Prénom -->
         <div class="form-group">
-          <label>Prénom <span class="star">*</span></label>
-          <input v-model="form.first_name" required placeholder="Votre prénom" />
+          <label>Nom complet *</label>
+          <input v-model="freelanceForm.full_name" required />
         </div>
 
-        <!-- ✅ Nom -->
         <div class="form-group">
-          <label>Nom <span class="star">*</span></label>
-          <input v-model="form.last_name" required placeholder="Votre nom" />
+          <label>Titre *</label>
+          <input v-model="freelanceForm.title" required placeholder="Ex: Développeur Fullstack" />
         </div>
 
-        <!-- ✅ Bio -->
         <div class="form-group">
-          <label>Bio</label>
-          <textarea v-model="form.bio" placeholder="Décrivez-vous en quelques lignes"></textarea>
+          <label>Description *</label>
+          <textarea v-model="freelanceForm.description" required></textarea>
         </div>
 
-        <!-- ✅ Compétences -->
         <div class="form-group">
-          <label>Compétences</label>
-          <input v-model="form.skills" placeholder="Ex: Python, Vue.js, DevOps" />
+          <label>Compétences *</label>
+          <input v-model="freelanceForm.skills" placeholder="Ex: Python, Vue.js" />
         </div>
 
-        <!-- ✅ Freelance ? -->
-        <div class="checkbox-group">
-          <input type="checkbox" v-model="form.is_freelancer" id="freelance-check" />
-          <label for="freelance-check">Je suis freelance</label>
+        <div class="form-group">
+          <label>Langues *</label>
+          <input v-model="freelanceForm.languages" placeholder="Ex: Français, Anglais" />
         </div>
 
-        <!-- ✅ Submit -->
-        <button type="submit" class="btn" :disabled="loading">
+        <div class="form-group">
+          <label>Taux horaire (€) *</label>
+          <input type="number" v-model="freelanceForm.hourly_rate" required />
+        </div>
+
+        <div class="form-group">
+          <label>Années d'expérience *</label>
+          <input type="number" v-model="freelanceForm.experience_years" required />
+        </div>
+
+        <div class="form-group">
+          <label>Disponibilité *</label>
+          <input v-model="freelanceForm.availability" placeholder="Ex: 20h/semaine" />
+        </div>
+
+        <button class="btn" :disabled="loading">
           <span v-if="loading">Enregistrement...</span>
           <span v-else>Créer mon profil</span>
         </button>
       </form>
+
+      <!-- ✅ ÉTAPE 2 : FORMULAIRE CLIENT -->
+      <form v-if="step === 2 && type === 'client'" @submit.prevent="submitProfile" class="profile-form">
+
+        <h2 class="title">Profil Client</h2>
+
+        <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+        <p v-if="successMessage" class="alert success">{{ successMessage }}</p>
+
+        <div class="form-group">
+          <label>Type de client *</label>
+          <input v-model="clientForm.client_type" required placeholder="Ex: Entreprise, Particulier" />
+        </div>
+
+        <div class="form-group">
+          <label>Nom complet *</label>
+          <input v-model="clientForm.fullname" required />
+        </div>
+
+        <div class="form-group">
+          <label>Nom de l'entreprise</label>
+          <input v-model="clientForm.company_name" />
+        </div>
+
+        <div class="form-group">
+          <label>Site web</label>
+          <input v-model="clientForm.company_website" />
+        </div>
+
+        <div class="form-group">
+          <label>Secteur d'activité *</label>
+          <input v-model="clientForm.industry" required />
+        </div>
+
+        <button class="btn" :disabled="loading">
+          <span v-if="loading">Enregistrement...</span>
+          <span v-else>Créer mon profil</span>
+        </button>
+      </form>
+
     </div>
 
   </div>
 </template>
 
 <style scoped>
-/* ✅ Container global */
 .profile-container {
   width: 100%;
   height: 100vh;
@@ -101,31 +201,47 @@ const submitProfile = async () => {
   padding: 20px;
 }
 
-/* ✅ Box centrale */
 .profile-box {
   background: #ffffff;
-  width: 400px;
+  width: 450px;
   padding: 30px;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.25);
   text-align: center;
 }
 
-/* ✅ Titre */
 .title {
-  margin-bottom: 20px;
+  margin-bottom: 10px;
   font-size: 24px;
   color: #1f2937;
 }
 
-/* ✅ Formulaire */
+.subtitle {
+  margin-bottom: 20px;
+  color: #6b7280;
+}
+
+.btn-type {
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+}
+.btn-type:hover {
+  background: #2563eb;
+}
+
 .profile-form {
   display: flex;
   flex-direction: column;
   gap: 15px;
 }
 
-/* ✅ Messages */
 .alert {
   padding: 10px;
   border-radius: 6px;
@@ -140,7 +256,6 @@ const submitProfile = async () => {
   color: #166534;
 }
 
-/* ✅ Inputs */
 .form-group {
   text-align: left;
 }
@@ -157,37 +272,20 @@ const submitProfile = async () => {
   border-radius: 6px;
   padding: 10px;
   font-size: 14px;
-  transition: 0.2s;
 }
 .form-group textarea {
   height: 80px;
   resize: none;
 }
-.form-group input:focus,
-.form-group textarea:focus {
-  border-color: #3b82f6;
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(59,130,246,0.2);
-}
 
-/* ✅ Checkbox */
-.checkbox-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #374151;
-}
-
-/* ✅ Bouton */
 .btn {
   background: #3b82f6;
   color: white;
   border: none;
-  padding: 10px;
+  padding: 12px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 15px;
-  transition: 0.2s;
+  font-size: 16px;
 }
 .btn:hover {
   background: #2563eb;
@@ -195,10 +293,5 @@ const submitProfile = async () => {
 .btn:disabled {
   background: #93c5fd;
   cursor: not-allowed;
-}
-
-/* ✅ Étoile obligatoire */
-.star {
-  color: #f59e0b;
 }
 </style>

@@ -3,9 +3,9 @@ import LoginForm from '@/components/auth/LoginForm.vue';
 import router from '@/router';
 import { useAuthStore } from '@/stores/auth';
 const authStore = useAuthStore();
+authStore.logout(false);
+let bool = authStore.isAuthenticated;
 
-if(authStore.isAuthenticated)
-  router.push('/dashboard')
 </script>
 
 <template>
@@ -13,7 +13,7 @@ if(authStore.isAuthenticated)
     <div class="login-container">
 
    <div class="login-right">
-        <LoginForm v-if="!authStore.isAuthenticated" />
+        <LoginForm v-if="!bool" />
         
 
       </div>

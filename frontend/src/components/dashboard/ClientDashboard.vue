@@ -1,224 +1,202 @@
 <script setup>
-import { useAuthStore } from '@/stores/auth';
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
+import { useProfileStore } from '@/stores/profile';
+import router from '@/router';
 
-const authStore = useAuthStore();
+const profileStore = useProfileStore();
 
-/* ✅ MOCK DATA — à remplacer plus tard par ton backend */
-const stats = ref({
-  missions_created: 4,
-  applications_received: 12,
-  active_missions: 2,
+const loading = ref(true);
+const saving = ref(false);
+const errorMessage = ref('');
+const successMessage = ref('');
+
+const form = ref({
+  client_type: '',
+  fullname: '',
+  company_name: '',
+  company_website: '',
+  industry: ''
 });
 
-const missions = ref([
-  {
-    id: 1,
-    title: "Développement d'une application mobile",
-    status: "En cours",
-    proposals: 5,
-  },
-  {
-    id: 2,
-    title: "Création d'un site e-commerce",
-    status: "En attente",
-    proposals: 2,
-  },
-]);
+onMounted(async () => {
+  loading.value = true;
 
-const applications = ref([
-  {
-    id: 1,
-    mission: "Développement d'une API Flask",
-    freelancer: "Jean Dupont",
-    status: "En attente",
-  },
-  {
-    id: 2,
-    mission: "Refonte d’un site vitrine",
-    freelancer: "Marie Kamga",
-    status: "Acceptée",
-  },
-]);
+  try {
+    const profile = await profileStore.getMyProfile();
+
+    if (!profile || profile.type !== "client") {
+      router.push('/dashboard');
+      return;
+    }
+
+    // ✅ Pré-remplir le formulaire
+    form.value.client_type = profile.client_type;
+    form.value.fullname = profile.fullname;
+    form.value.company_name = profile.company_name;
+    form.value.company_website = profile.company_website;
+    form.value.industry = profile.industry;
+
+  } catch (e) {
+    errorMessage.value = "Impossible de charger votre profil.";
+  }
+
+  loading.value = false;
+});
+
+const saveProfile = async () => {
+  saving.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+
+  try {
+    await profileStore.updateProfile({
+      type: "client",
+      client_type: form.value.client_type,
+      fullname: form.value.fullname,
+      company_name: form.value.company_name,
+      company_website: form.value.company_website,
+      industry: form.value.industry
+    });
+
+    successMessage.value = "Profil mis à jour avec succès !";
+
+  } catch (e) {
+    errorMessage.value = "Erreur lors de la mise à jour du profil.";
+  }
+
+  saving.value = false;
+};
 </script>
 
 <template>
-  <div class="dashboard-container">
+  <div class="profile-container">
 
-    <!-- ✅ HEADER -->
-    <header class="dashboard-header">
-      <h2>Bienvenue, {{ authStore.user.email }}</h2>
-      <p class="subtitle">Voici un aperçu de votre activité client</p>
-    </header>
+    <div class="profile-box">
 
-    <!-- ✅ STATS -->
-    <section class="stats-grid">
-      <div class="stat-card">
-        <h3>{{ stats.missions_created }}</h3>
-        <p>Missions créées</p>
-      </div>
+      <h2 class="title">Mon Profil Client</h2>
 
-      <div class="stat-card">
-        <h3>{{ stats.active_missions }}</h3>
-        <p>Missions actives</p>
-      </div>
+      <div v-if="loading" class="loading">Chargement...</div>
 
-      <div class="stat-card">
-        <h3>{{ stats.applications_received }}</h3>
-        <p>Candidatures reçues</p>
-      </div>
-    </section>
+      <form v-else @submit.prevent="saveProfile" class="profile-form">
 
-    <!-- ✅ MISSIONS CRÉÉES -->
-    <section class="section">
-      <h3 class="section-title">📌 Vos missions</h3>
+        <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+        <p v-if="successMessage" class="alert success">{{ successMessage }}</p>
 
-      <div class="mission-list">
-        <div v-for="m in missions" :key="m.id" class="mission-card">
-          <h4>{{ m.title }}</h4>
-          <p class="status">{{ m.status }}</p>
-          <p class="proposals">{{ m.proposals }} propositions</p>
+        <div class="form-group">
+          <label>Type de client *</label>
+          <input v-model="form.client_type" required placeholder="Ex: Entreprise, Particulier" />
         </div>
-      </div>
-    </section>
 
-    <!-- ✅ CANDIDATURES -->
-    <section class="section">
-      <h3 class="section-title">📨 Candidatures reçues</h3>
-
-      <div class="application-list">
-        <div v-for="a in applications" :key="a.id" class="application-card">
-          <h4>{{ a.mission }}</h4>
-          <p class="freelancer">Freelance : {{ a.freelancer }}</p>
-          <p class="status" :class="a.status.toLowerCase()">{{ a.status }}</p>
+        <div class="form-group">
+          <label>Nom complet *</label>
+          <input v-model="form.fullname" required />
         </div>
-      </div>
-    </section>
 
-    <!-- ✅ BOUTON CRÉER MISSION -->
-    <section class="section">
-      <button class="create-btn">Créer une nouvelle mission</button>
-    </section>
+        <div class="form-group">
+          <label>Nom de l'entreprise</label>
+          <input v-model="form.company_name" />
+        </div>
+
+        <div class="form-group">
+          <label>Site web</label>
+          <input v-model="form.company_website" placeholder="https://..." />
+        </div>
+
+        <div class="form-group">
+          <label>Secteur d'activité *</label>
+          <input v-model="form.industry" required placeholder="Ex: Technologie, Santé..." />
+        </div>
+
+        <button class="btn" :disabled="saving">
+          <span v-if="saving">Enregistrement...</span>
+          <span v-else>Mettre à jour</span>
+        </button>
+
+      </form>
+
+    </div>
 
   </div>
 </template>
 
 <style scoped>
-/* ✅ Layout général */
-.dashboard-container {
+.profile-container {
   width: 100%;
-  max-width: 900px;
-  margin: auto;
-  padding: 20px;
-  font-family: sans-serif;
-}
-
-/* ✅ Header */
-.dashboard-header {
-  text-align: center;
-  margin-bottom: 30px;
-}
-.subtitle {
-  color: #666;
-  font-size: 14px;
-}
-
-/* ✅ Stats */
-.stats-grid {
+  min-height: 100vh;
+  background: #f3f4f6;
   display: flex;
-  justify-content: space-between;
-  gap: 15px;
-  margin-bottom: 30px;
+  justify-content: center;
+  padding: 40px 20px;
 }
-.stat-card {
-  flex: 1;
-  background: #f5f7fa;
-  padding: 20px;
-  border-radius: 10px;
+
+.profile-box {
+  background: #ffffff;
+  width: 600px;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+}
+
+.title {
+  margin-bottom: 20px;
+  font-size: 26px;
+  color: #1f2937;
   text-align: center;
 }
-.stat-card h3 {
-  font-size: 28px;
-  margin: 0;
-  color: #2c3e50;
-}
-.stat-card p {
-  margin: 5px 0 0;
-  color: #555;
+
+.loading {
+  text-align: center;
+  padding: 20px;
 }
 
-/* ✅ Sections */
-.section {
-  margin-bottom: 30px;
-}
-.section-title {
-  margin-bottom: 10px;
-  font-size: 20px;
-  color: #2c3e50;
-}
-
-/* ✅ Missions */
-.mission-list {
+.profile-form {
   display: flex;
   flex-direction: column;
   gap: 15px;
 }
-.mission-card {
-  background: white;
-  padding: 15px;
-  border-radius: 10px;
-  border: 1px solid #eee;
-}
-.mission-card h4 {
-  margin: 0 0 5px;
-}
-.status {
-  color: #3b82f6;
-  font-weight: bold;
-}
-.proposals {
-  color: #555;
+
+.alert {
+  padding: 10px;
+  border-radius: 6px;
   font-size: 14px;
 }
+.alert.error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.alert.success {
+  background: #dcfce7;
+  color: #166534;
+}
 
-/* ✅ Applications */
-.application-list {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-.application-card {
-  background: white;
-  padding: 15px;
-  border-radius: 10px;
-  border: 1px solid #eee;
-}
-.freelancer {
+.form-group label {
+  font-size: 14px;
   color: #374151;
+  margin-bottom: 5px;
+  display: block;
+}
+.form-group input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 10px;
   font-size: 14px;
 }
-.status.en\ attente {
-  color: #f39c12;
-}
-.status.acceptée {
-  color: #27ae60;
-}
-.status.rejetée {
-  color: #e74c3c;
-}
 
-/* ✅ Bouton créer mission */
-.create-btn {
-  padding: 12px 20px;
+.btn {
   background: #3b82f6;
   color: white;
   border: none;
-  border-radius: 8px;
+  padding: 12px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 16px;
-  transition: 0.2s;
 }
-.create-btn:hover {
+.btn:hover {
   background: #2563eb;
+}
+.btn:disabled {
+  background: #93c5fd;
+  cursor: not-allowed;
 }
 </style>

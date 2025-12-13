@@ -7,3 +7,5 @@ Flask-JWT-Extended
 dotenv
 pytest
 flake8
+Flask-Cors
+Flask-Mail

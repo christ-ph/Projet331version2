@@ -4,39 +4,71 @@ import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 
 const form = ref({ email: '', password: '', confirm: '' });
+const otp = ref('');
+const showOtp = ref(false);
 
 const errorMessage = ref('');
 const successMessage = ref('');
+const otpMessage = ref('');
+
 const router = useRouter();
 const authStore = useAuthStore();
 
 const register = async () => {
   errorMessage.value = '';
   successMessage.value = '';
+  otpMessage.value = '';
 
-  // ✅ Vérification mot de passe
   if (form.value.password !== form.value.confirm) {
     errorMessage.value = "Les mots de passe ne correspondent pas.";
     return;
   }
 
-  // ✅ Vérification format email simple
   if (!form.value.email.includes("@")) {
     errorMessage.value = "Veuillez entrer un email valide.";
     return;
   }
 
   try {
-    await authStore.register(form.value.email, form.value.password);
-    successMessage.value = "Compte créé avec succès !";
+    const res = await authStore.register(form.value.email, form.value.password);
+
+    successMessage.value = "Compte créé ! Un code vous a été envoyé.";
+    showOtp.value = true; // ✅ On affiche le champ OTP
+
+  } catch (error) {
+    const msg = error.response?.data?.msg || "Erreur lors de l'inscription";
+    errorMessage.value = msg;
+  }
+};
+
+const verify = async () => {
+  otpMessage.value = '';
+  errorMessage.value = '';
+
+  try {
+    await authStore.verifyEmail(form.value.email, otp.value);
+
+    otpMessage.value = "Email vérifié avec succès !";
 
     setTimeout(() => {
       router.push('/login');
     }, 800);
 
   } catch (error) {
-    const msg = error.response?.data?.msg || "Erreur lors de l'inscription";
+    const msg = error.response?.data?.msg || "Code invalide";
     errorMessage.value = msg;
+  }
+};
+
+const resend = async () => {
+  otpMessage.value = '';
+  errorMessage.value = '';
+
+  try {
+    await authStore.resendCode(form.value.email);
+    otpMessage.value = "Nouveau code envoyé !";
+  } catch (error) {
+    errorMessage.value = "Impossible d'envoyer un nouveau code.";
   }
 };
 </script>
@@ -47,47 +79,84 @@ const register = async () => {
     <div class="register-box">
       <h2 class="title">Créer un compte</h2>
 
-      <form @submit.prevent="register" class="register-form">
+      <!-- ✅ FORMULAIRE REGISTER -->
+      <form v-if="!showOtp" @submit.prevent="register" class="register-form">
 
-        <!-- ✅ Messages -->
         <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
         <p v-if="successMessage" class="alert success">{{ successMessage }}</p>
 
-        <!-- ✅ Email -->
         <div class="form-group">
-          <label>Email <span class="star">*</span></label>
-          <input v-model="form.email" type="email" required placeholder="exemple@mail.com" />
+          <label>Email *</label>
+          <input v-model="form.email" type="email" required />
         </div>
 
-        <!-- ✅ Password -->
         <div class="form-group">
-          <label>Mot de passe <span class="star">*</span></label>
-          <input v-model="form.password" type="password" required placeholder="Votre mot de passe" />
+          <label>Mot de passe *</label>
+          <input v-model="form.password" type="password" required />
         </div>
 
-        <!-- ✅ Confirm Password -->
         <div class="form-group">
-          <label>Confirmer le mot de passe <span class="star">*</span></label>
-          <input v-model="form.confirm" type="password" required placeholder="Confirmez le mot de passe" />
+          <label>Confirmer *</label>
+          <input v-model="form.confirm" type="password" required />
         </div>
 
-        <!-- ✅ Submit -->
-        <button type="submit" class="btn" :disabled="authStore.isLoading">
-          <span v-if="authStore.isLoading">Création...</span>
-          <span v-else>S'inscrire</span>
-        </button>
+        <button type="submit" class="btn">S'inscrire</button>
       </form>
 
-      <p class="login-text">
-        Vous avez déjà un compte ?
+      <!-- ✅ FORMULAIRE OTP -->
+      <div v-else class="otp-box">
+
+        <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+        <p v-if="otpMessage" class="alert success">{{ otpMessage }}</p>
+
+        <h3>Vérification de l'email</h3>
+        <p class="info">Un code a été envoyé à <strong>{{ form.email }}</strong></p>
+
+        <input
+          v-model="otp"
+          maxlength="6"
+          class="otp-input"
+          placeholder="Entrez le code"
+        />
+
+        <button class="btn" @click="verify">Valider</button>
+
+        <button class="btn resend" @click="resend">Renvoyer le code</button>
+      </div>
+
+      <p class="login-text" v-if="!showOtp">
+        Déjà un compte ?
         <router-link to="/login">Se connecter</router-link>
       </p>
+
     </div>
 
   </div>
 </template>
 
 <style scoped>
+/* ✅ Styles identiques à ta version + OTP */
+.otp-box {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.otp-input {
+  width: 100%;
+  height: 45px;
+  font-size: 20px;
+  text-align: center;
+  letter-spacing: 5px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.resend {
+  background: #6b7280;
+  margin-top: 10px;
+}
+
 /* ✅ Container global */
 .register-container {
   width: 100%;
@@ -173,6 +242,7 @@ const register = async () => {
   cursor: pointer;
   font-size: 15px;
   transition: 0.2s;
+  gap: 5px;
 }
 .btn:hover {
   background: #2563eb;
