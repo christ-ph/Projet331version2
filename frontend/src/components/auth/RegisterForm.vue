@@ -30,10 +30,10 @@ const register = async () => {
   }
 
   try {
-    const res = await authStore.register(form.value.email, form.value.password);
+    await authStore.register(form.value.email, form.value.password);
 
     successMessage.value = "Compte créé ! Un code vous a été envoyé.";
-    showOtp.value = true; // ✅ On affiche le champ OTP
+    showOtp.value = true;
 
   } catch (error) {
     const msg = error.response?.data?.msg || "Erreur lors de l'inscription";
@@ -75,13 +75,11 @@ const resend = async () => {
 
 <template>
   <div class="register-container">
-
     <div class="register-box">
       <h2 class="title">Créer un compte</h2>
 
       <!-- ✅ FORMULAIRE REGISTER -->
       <form v-if="!showOtp" @submit.prevent="register" class="register-form">
-
         <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
         <p v-if="successMessage" class="alert success">{{ successMessage }}</p>
 
@@ -100,12 +98,14 @@ const resend = async () => {
           <input v-model="form.confirm" type="password" required />
         </div>
 
-        <button type="submit" class="btn">S'inscrire</button>
+        <button type="submit" class="btn" :disabled="authStore.isLoading">
+          <span v-if="authStore.isLoading">Inscription...</span>
+          <span v-else>S'inscrire</span>
+        </button>
       </form>
 
       <!-- ✅ FORMULAIRE OTP -->
       <div v-else class="otp-box">
-
         <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
         <p v-if="otpMessage" class="alert success">{{ otpMessage }}</p>
 
@@ -119,26 +119,40 @@ const resend = async () => {
           placeholder="Entrez le code"
         />
 
-        <button class="btn" @click="verify">Valider</button>
+        <button class="btn" @click="verify" :disabled="authStore.isLoading">
+          <span v-if="authStore.isLoading">Vérification...</span>
+          <span v-else>Valider</span>
+        </button>
 
-        <button class="btn resend" @click="resend">Renvoyer le code</button>
+        <button class="btn resend" @click="resend" :disabled="authStore.isLoading">
+          Renvoyer le code
+        </button>
       </div>
 
       <p class="login-text" v-if="!showOtp">
         Déjà un compte ?
         <router-link to="/login">Se connecter</router-link>
       </p>
-
     </div>
-
   </div>
 </template>
 
 <style scoped>
-/* ✅ Styles identiques à ta version + OTP */
+/* ✅ Styles OTP */
 .otp-box {
   margin-top: 20px;
   text-align: center;
+}
+
+.otp-box h3 {
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.info {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 15px;
 }
 
 .otp-input {
@@ -156,6 +170,9 @@ const resend = async () => {
   background: #6b7280;
   margin-top: 10px;
 }
+.resend:hover {
+  background: #4b5563;
+}
 
 /* ✅ Container global */
 .register-container {
@@ -168,7 +185,6 @@ const resend = async () => {
   padding: 20px;
 }
 
-/* ✅ Box centrale */
 .register-box {
   background: #ffffff;
   width: 350px;
@@ -178,21 +194,18 @@ const resend = async () => {
   text-align: center;
 }
 
-/* ✅ Titre */
 .title {
   margin-bottom: 20px;
   font-size: 24px;
   color: #1f2937;
 }
 
-/* ✅ Formulaire */
 .register-form {
   display: flex;
   flex-direction: column;
   gap: 15px;
 }
 
-/* ✅ Messages */
 .alert {
   padding: 10px;
   border-radius: 6px;
@@ -207,7 +220,6 @@ const resend = async () => {
   color: #166534;
 }
 
-/* ✅ Inputs */
 .form-group {
   text-align: left;
 }
@@ -232,7 +244,6 @@ const resend = async () => {
   box-shadow: 0 0 0 2px rgba(59,130,246,0.2);
 }
 
-/* ✅ Bouton */
 .btn {
   background: #3b82f6;
   color: white;
@@ -242,7 +253,6 @@ const resend = async () => {
   cursor: pointer;
   font-size: 15px;
   transition: 0.2s;
-  gap: 5px;
 }
 .btn:hover {
   background: #2563eb;
@@ -252,7 +262,6 @@ const resend = async () => {
   cursor: not-allowed;
 }
 
-/* ✅ Lien login */
 .login-text {
   margin-top: 15px;
   font-size: 14px;
@@ -263,10 +272,5 @@ const resend = async () => {
 }
 .login-text a:hover {
   text-decoration: underline;
-}
-
-/* ✅ Étoile obligatoire */
-.star {
-  color: #f59e0b;
 }
 </style>

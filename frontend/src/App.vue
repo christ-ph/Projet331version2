@@ -3,24 +3,21 @@ import { useAuthStore } from './stores/auth';
 import HeaderComponent from './components/layout/HeaderComponent.vue'; 
 
 const authStore = useAuthStore();
-let bool = authStore.isAuthenticated
-
 </script>
 
 <template>
   <div id="app-wrapper">
-  <HeaderComponent v-if="bool"/> 
+    
+    <HeaderComponent v-if="authStore.isAuthenticated" /> 
     
     <main class="main-content">
       <RouterView />
     </main>
-    
-    </div>
+  </div>
 </template>
 
 <style scoped>
-
-#app-wrapper{
+#app-wrapper {
   width: 100%;
   height: 100%;
   display: flex;
@@ -31,8 +28,5 @@ let bool = authStore.isAuthenticated
   display: flex;
   flex-direction: column;
   position: relative;
-
 }
-
-/* ... (vos styles existants) */
 </style>
