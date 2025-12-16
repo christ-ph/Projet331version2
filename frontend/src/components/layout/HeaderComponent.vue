@@ -1,19 +1,15 @@
 <script setup>
 import { computed } from 'vue';
+import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
-import { useProfileStore } from '@/stores/profile';
-import router from '@/router';
 
 const authStore = useAuthStore();
-const profileStore = useProfileStore();
+const router = useRouter();
 
 // ✅ Rôle de l'utilisateur (réactif)
 const role = computed(() => authStore.user?.role || null);
 
-// ✅ Le user a-t-il un profil ?
-const hasProfile = computed(() => profileStore.hasProfile);
-
-// ✅ Menu dynamique selon le rôle + profil existant
+// ✅ Menu dynamique selon le rôle
 const menuItems = computed(() => {
   if (!role.value) return [];
 
@@ -21,8 +17,6 @@ const menuItems = computed(() => {
     return [
       { label: "Dashboard", path: "/dashboard" },
       { label: "Missions", path: "/missions" },
-      { label: "Candidatures", path: "/applications" },
-      { label: "Portfolio", path: "/portfolio" },
       { label: "Mon Profil", path: "/freelance-profile" },
     ];
   }
@@ -32,24 +26,25 @@ const menuItems = computed(() => {
       { label: "Dashboard", path: "/dashboard" },
       { label: "Créer une mission", path: "/missions/create" },
       { label: "Mes missions", path: "/client/missions" },
-      { label: "Freelances", path: "/freelancers" },
       { label: "Mon Profil", path: "/client-profile" },
     ];
   }
 
-  return [];
+  // USER sans profil → menu minimal
+  return [
+    { label: "Dashboard", path: "/dashboard" },
+  ];
 });
 
 // ✅ Déconnexion
 const logout = () => {
-  authStore.logout(); // le store gère déjà la redirection
+  authStore.logout();
+  router.push('/login');
 };
-// alert(!role.value+" et "+!hasProfile.value);
 </script>
 
 <template>
   <header class="app-header">
-
     <!-- ✅ Logo -->
     <div class="logo" @click="router.push('/dashboard')">
       Freelance<span>CAM</span>
@@ -73,14 +68,6 @@ const logout = () => {
 </template>
 
 <style scoped>
-/* ✅ Reset */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-/* ✅ Header global */
 .app-header {
   width: 100%;
   height: 70px;
@@ -98,7 +85,6 @@ const logout = () => {
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
 
-/* ✅ Logo */
 .logo {
   font-size: 24px;
   font-weight: bold;
@@ -108,7 +94,6 @@ const logout = () => {
   color: #3b82f6;
 }
 
-/* ✅ Menu */
 .nav-menu {
   display: flex;
   gap: 20px;
@@ -123,7 +108,6 @@ const logout = () => {
   color: #3b82f6;
 }
 
-/* ✅ Déconnexion */
 .logout-btn {
   background: #ef4444;
   border: none;

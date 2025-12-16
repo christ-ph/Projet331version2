@@ -32,6 +32,8 @@ def create_app():
     from app.profiles.routes import profile_bp
     app.register_blueprint(profile_bp, url_prefix='/api/profiles')
     
+    from app.portfolio.routes import portfolio_bp
+    app.register_blueprint(portfolio_bp, url_prefix='/api/portfolio')
     # # NOUVEAU : Enregistrement du Blueprint des Missions
     # from app.missions.routes import missions_bp
     # app.register_blueprint(missions_bp)

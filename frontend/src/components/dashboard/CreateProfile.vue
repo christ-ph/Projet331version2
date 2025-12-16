@@ -1,12 +1,12 @@
 <script setup>
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { useProfileStore } from '@/stores/profile';
-import router from '@/router';
 
 const profileStore = useProfileStore();
+const router = useRouter();
 
 const step = ref(1); // 1 = choix du type, 2 = formulaire
-
 const type = ref(null); // "freelance" ou "client"
 
 const loading = ref(false);
@@ -61,12 +61,15 @@ const submitProfile = async () => {
 
     successMessage.value = "Profil créé avec succès !";
 
+    // ✅ Attendre un peu pour que l'utilisateur voie le message
     setTimeout(() => {
-      router.push('/dashboard');
-    }, 800);
+      // ✅ Recharger la page pour que DashboardView détecte le nouveau profil
+      window.location.reload();
+    }, 1000);
 
   } catch (e) {
-    errorMessage.value = "Erreur lors de la création du profil.";
+    console.error('Erreur lors de la création du profil:', e);
+    errorMessage.value = e.response?.data?.msg || "Erreur lors de la création du profil.";
   } finally {
     loading.value = false;
   }
@@ -75,7 +78,6 @@ const submitProfile = async () => {
 
 <template>
   <div class="profile-container">
-
     <div class="profile-box">
 
       <!-- ✅ ÉTAPE 1 : CHOIX DU TYPE -->
@@ -94,7 +96,6 @@ const submitProfile = async () => {
 
       <!-- ✅ ÉTAPE 2 : FORMULAIRE FREELANCE -->
       <form v-if="step === 2 && type === 'freelance'" @submit.prevent="submitProfile" class="profile-form">
-
         <h2 class="title">Profil Freelance</h2>
 
         <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
@@ -148,7 +149,6 @@ const submitProfile = async () => {
 
       <!-- ✅ ÉTAPE 2 : FORMULAIRE CLIENT -->
       <form v-if="step === 2 && type === 'client'" @submit.prevent="submitProfile" class="profile-form">
-
         <h2 class="title">Profil Client</h2>
 
         <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
@@ -181,12 +181,11 @@ const submitProfile = async () => {
 
         <button class="btn" :disabled="loading">
           <span v-if="loading">Enregistrement...</span>
-          <span v-else>Créer mon profil</span>
+          <span v-else">Créer mon profil</span>
         </button>
       </form>
 
     </div>
-
   </div>
 </template>
 

@@ -1,142 +1,104 @@
 import { defineStore } from 'pinia';
 import axios from 'axios';
 
-const storedToken = localStorage.getItem('access_token');
-const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
-
 export const useAuthStore = defineStore('auth', {
-    state: () => ({
-        token: storedToken || null,
-        isAuthenticated: !!storedToken,
-        user: storedUser,
-        isLoading: false,
-        userLoaded: false,
-    }),
+  state: () => ({
+    token: localStorage.getItem('access_token') || null,
+    user: JSON.parse(localStorage.getItem('user') || 'null'),
+    isLoading: false,
+  }),
 
-    actions: {
+  getters: {
+    isAuthenticated: (state) => !!state.token,
+    userRole: (state) => state.user?.role || null,
+  },
 
-        // ✅ Initialise Axios avec le token
-        initializeToken() {
-            if (this.token) {
-                axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
-            }
-        },
+  actions: {
+    // ✅ Initialisation au démarrage de l'app
+    // initialize() {
+    //   if (this.token) {
+    //     axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
+    //   }
+    // },
 
-        // ✅ LOGIN
-        async login(email, password) {
-            this.isLoading = true;
+    // ✅ Login
+    async login(email, password) {
+      this.isLoading = true;
+      try {
+        const response = await axios.post('/auth/login', { email, password });
+        const { access_token, user } = response.data;
 
-            try {
-                const response = await axios.post('/auth/login', { email, password });
+        this.token = access_token;
+        this.user = user;
 
-                const { access_token: token, user } = response.data;
+        localStorage.setItem('access_token', access_token);
+        localStorage.setItem('user', JSON.stringify(user));
 
-                this.token = token;
-                this.user = user;
-                this.isAuthenticated = true;
+        axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
 
-                localStorage.setItem('access_token', token);
-                localStorage.setItem('user', JSON.stringify(user));
-
-                axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
-                return true;
-
-            } catch (error) {
-
-                // ✅ Si email non vérifié → on ne logout pas
-                if (error.response?.status === 403) {
-                    throw {
-                        type: 'unverified',
-                        message: 'Veuillez vérifier votre email.'
-                    };
-                }
-
-                this.logout(false);
-                throw error;
-
-            } finally {
-                this.isLoading = false;
-            }
-        },
-
-        // ✅ REGISTER (retourne user_id pour la page OTP)
-        async register(email, password) {
-            try {
-                const response = await axios.post('/auth/register', { email, password });
-                return response.data; // contient user_id
-            } catch (error) {
-                throw error;
-            }
-        },
-
-        // ✅ VERIFY EMAIL
-        async verifyEmail(email, code) {
-            try {
-                const response = await axios.post('/auth/verify-email', { email, code });
-                return response.data;
-            } catch (error) {
-                throw error;
-            }
-        },
-
-        // ✅ RESEND CODE
-        async resendCode(email) {
-            try {
-                const response = await axios.post('/auth/resend-code', { email });
-                return response.data;
-            } catch (error) {
-                throw error;
-            }
-        },
-
-        // ✅ PROFILE
-        async profile() {
-            try {
-                const response = await axios.get('/auth/user-data');
-
-                this.user = response.data.user;
-                this.userLoaded = true;
-                this.isAuthenticated = true;
-
-                localStorage.setItem('user', JSON.stringify(this.user));
-
-                return response.data;
-
-            } catch (error) {
-                this.userLoaded = true;
-                this.isAuthenticated = true;
-                return null;
-            }
-        },
-
-        // ✅ LOGOUT
-        logout(redirect = true) {
-            this.token = null;
-            this.user = null;
-            this.isAuthenticated = false;
-
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('user');
-
-            delete axios.defaults.headers.common['Authorization'];
-
-            if (redirect && this.router) {
-                this.router.push('/login');
-            }
-        },
-
-        // ✅ Hydrate user si token existe
-        async fetchUserIfTokenExists() {
-            if (this.isAuthenticated && !this.user) {
-                try {
-                    const response = await axios.get('/auth/protected');
-                    this.user = response.data.user;
-                    localStorage.setItem('user', JSON.stringify(this.user));
-                } catch (error) {
-                    this.logout(false);
-                }
-            }
+        return true;
+      } catch (error) {
+        if (error.response?.status === 403) {
+          throw { type: 'unverified', message: 'Veuillez vérifier votre email.' };
         }
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
     },
+     updateUser(updatedUser) {
+    this.user = updatedUser;
+    localStorage.setItem('user', JSON.stringify(updatedUser));
+  },
+  async register(email, password) {
+    this.isLoading = true;
+    try {
+      const response = await axios.post('/auth/register', { email, password });
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de l\'inscription:', error);
+      throw error;
+    } finally {
+      this.isLoading = false;
+    }
+  },
+
+  // ✅ NOUVELLE ACTION : Vérifier l'email avec le code OTP
+  async verifyEmail(email, code) {
+    this.isLoading = true;
+    try {
+      const response = await axios.post('/auth/verify-email', { email, code });
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la vérification:', error);
+      throw error;
+    } finally {
+      this.isLoading = false;
+    }
+  },
+
+  // ✅ NOUVELLE ACTION : Renvoyer le code OTP
+  async resendCode(email) {
+    this.isLoading = true;
+    try {
+      const response = await axios.post('/auth/resend-code', { email });
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors du renvoi du code:', error);
+      throw error;
+    } finally {
+      this.isLoading = false;
+    }
+  },
+    // ✅ Logout
+    logout() {
+      this.token = null;
+      this.user = null;
+
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+
+      delete axios.defaults.headers.common['Authorization'];
+    },
+  },
 });

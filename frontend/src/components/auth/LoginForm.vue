@@ -25,7 +25,6 @@ const login = async () => {
     }, 300);
 
   } catch (error) {
-
     // ✅ Cas spécial : email non vérifié
     if (error.type === 'unverified') {
       router.push({
@@ -41,15 +40,12 @@ const login = async () => {
 };
 </script>
 
-
 <template>
   <div class="login-container">
-
     <div class="login-box">
       <h2 class="title">Connexion</h2>
 
       <form @submit.prevent="login" class="login-form">
-
         <!-- ✅ Messages -->
         <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
         <p v-if="successMessage" class="alert success">{{ successMessage }}</p>
@@ -78,16 +74,15 @@ const login = async () => {
         <router-link to="/register">Créer un compte</router-link>
       </p>
     </div>
-
   </div>
 </template>
 
 <style scoped>
 /* ✅ Container global */
 .login-container {
-    position: absolute;
-    top: 0;
-    z-index: 2;
+  position: absolute;
+  top: 0;
+  z-index: 2;
   width: 100%;
   height: 100vh;
   background: linear-gradient(135deg, #1f2937, #111827);

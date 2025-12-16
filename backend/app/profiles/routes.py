@@ -28,9 +28,9 @@ def manage_profile():
     if not user:
         return jsonify({"msg": "Utilisateur introuvable"}), 404
 
-    profile = user.profile  # relation OneToOne
-
-    profile_type = data.get("type")  # "freelance" ou "client"
+    profile = user.profile
+    profile_type = data.get("type")
+    
     if profile_type not in ["freelance", "client"]:
         return jsonify({"msg": "Type de profil invalide"}), 400
 
@@ -60,7 +60,16 @@ def manage_profile():
             profile.industry = data.get("industry")
 
         db.session.commit()
-        return jsonify({"msg": "Profil mis à jour"}), 200
+        
+        # ✅ AJOUT : Retourner le user mis à jour
+        return jsonify({
+            "msg": "Profil mis à jour",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "role": user.role.name
+            }
+        }), 200
 
     # ✅ CRÉATION
     if profile_type == "freelance":
@@ -92,8 +101,15 @@ def manage_profile():
     db.session.add(new_profile)
     db.session.commit()
 
-    return jsonify({"msg": "Profil créé"}), 201
-
+    # ✅ AJOUT : Retourner le user avec son nouveau rôle
+    return jsonify({
+        "msg": "Profil créé",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "role": user.role.name
+        }
+    }), 201
 
 # ============================================================
 # ✅ B. CONSULTER UN PROFIL
