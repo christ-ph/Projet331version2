@@ -27,8 +27,9 @@ def create_app():
     CORS(app)
     # Enregistrement de Blue Sprints
     from app.auth.routes import auth_bp
+    from app.portfolio.routes import portfolio_bp
     app.register_blueprint(auth_bp, url_prefix='/auth') # J'ajoute /auth ici pour la clarté
-
+    app.register_blueprint(portfolio_bp, url_prefix='/api/portfolio')
     from app.profiles.routes import profile_bp
     from app.missions.routes import missions_bp
     app.register_blueprint(profile_bp, url_prefix='/api/profiles')
