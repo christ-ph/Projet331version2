@@ -2,54 +2,88 @@
   <div class="create-mission-page">
     <h1>Créer une mission</h1>
 
-    <form @submit.prevent="submitMission" class="mission-form">
-
+    <form
+      class="mission-form"
+      @submit.prevent="submitMission"
+    >
       <label>Titre</label>
       <input v-model="form.title" required />
 
       <label>Description</label>
-      <textarea v-model="form.description" required></textarea>
+      <textarea v-model="form.description" required />
 
       <label>Budget (€)</label>
-      <input type="number" v-model="form.budget" required />
+      <input
+        type="number"
+        v-model.number="form.budget"
+        required
+      />
 
-      <label>Durée</label>
-      <input v-model="form.duration" required />
+      <label>Date limite</label>
+      <input
+        type="date"
+        v-model="form.deadline"
+      />
 
       <label>Compétences requises</label>
-      <input v-model="form.required_skills" required />
+      <input
+        v-model="form.required_skills"
+        placeholder="Ex: Vue.js, Flask, PostgreSQL"
+      />
 
-      <button type="submit">Créer la mission</button>
+      <button type="submit">
+        Créer la mission
+      </button>
 
-      <p v-if="missionsStore.error" class="error">{{ missionsStore.error }}</p>
+      <p v-if="missionsStore.error" class="error">
+        {{ missionsStore.error }}
+      </p>
     </form>
   </div>
 </template>
 
-<script setup>
-import { reactive } from 'vue';
-import { useMissionStore } from '@/stores/missions';
-import { useRouter } from 'vue-router';
 
-const missionsStore = useMissionStore();
-const router = useRouter();
+<script setup>
+import { reactive } from 'vue'
+import { useMissionStore } from '@/stores/missions'
+import { useRouter } from 'vue-router'
+
+const missionsStore = useMissionStore()
+const router = useRouter()
 
 const form = reactive({
-  title: "",
-  description: "",
-  budget: "",
-  duration: "",
-  required_skills: ""
-});
+  title: '',
+  description: '',
+  budget: null,
+  deadline: '',
+  required_skills: ''
+})
 
-async function submitMission() {
-  const result = await missionsStore.createMission(form);
+const submitMission = async () => {
+  // Transformation vers format backend
+  const payload = {
+    title: form.title,
+    description: form.description,
+    budget: form.budget,
+    deadline: form.deadline
+      ? new Date(form.deadline).toISOString()
+      : null,
+    required_skills: form.required_skills
+      ? form.required_skills
+          .split(',')
+          .map(skill => skill.trim())
+          .filter(Boolean)
+      : []
+  }
 
-  if (result) {
-    router.push('/client/missions'); // redirection vers la liste des missions du client
+  const success = await missionsStore.createMission(payload)
+
+  if (success) {
+    router.push('/client/missions')
   }
 }
 </script>
+
 
 <style scoped>
 /* ✅ Page globale */

@@ -1,37 +1,69 @@
-// // Fichier frontend/src/main.js (CODE CORRIGÉ)
-
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { useAuthStore } from './stores/auth.js' 
-
 import App from './App.vue'
 import router from './router'
-
 import axios from 'axios'
+import { useAuthStore } from '@/stores/auth'
 
-axios.defaults.baseURL = 'http://127.0.0.1:5000';
+// =========================
+// CONFIG AXIOS
+// =========================
+axios.defaults.baseURL = 'http://127.0.0.1:5000'
+axios.defaults.headers.common['Content-Type'] = 'application/json'
 
+// =========================
+// INTERCEPTEURS DEBUG
+// =========================
+axios.interceptors.request.use(
+  config => {
+    console.log('📤 Requête:', {
+      method: config.method?.toUpperCase(),
+      url: config.url
+    })
+    return config
+  },
+  error => {
+    console.error('❌ Erreur requête:', error)
+    return Promise.reject(error)
+  }
+)
+
+axios.interceptors.response.use(
+  response => {
+    console.log('📥 Réponse:', {
+      status: response.status,
+      url: response.config.url
+    })
+    return response
+  },
+  error => {
+    console.error('❌ Erreur réponse:', {
+      status: error.response?.status,
+      url: error.config?.url,
+      message: error.message
+    })
+    return Promise.reject(error)
+  }
+)
+
+// =========================
+// CREATE APP
+// =========================
 const app = createApp(App)
-
 const pinia = createPinia()
-app.use(pinia) 
 
+app.use(pinia)
+app.use(router)
 
-const authStore = useAuthStore();
-authStore.initializeToken();
+// =========================
+// INIT AUTH STORE (PROPRE)
+// =========================
+const authStore = useAuthStore()
+authStore.initialize()
 
+console.log('✅ Store auth initialisé')
 
-authStore.router = router;    
-
-app.use(router) 
-
-app.mount('#app') 
-
-
-
-
-
-
-
-
-
+// =========================
+// MOUNT
+// =========================
+app.mount('#app')

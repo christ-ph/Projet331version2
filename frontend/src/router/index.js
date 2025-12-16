@@ -1,111 +1,270 @@
-
+// src/router/index.js - CORRIGÉ
 import { createRouter, createWebHistory } from 'vue-router';
 
-import HomeView from '../views/HomeView.vue';
-import LoginView from '../views/LoginView.vue';
-import RegisterView from '../views/RegisterView.vue';
-import DashboardView from '../views/DashboardView.vue';
-import AvailableMissionsview from '../views/AvailableMissionView.vue';
-// import UserProfileView from '../views/UserProfileView.vue';
-// import FreelanceProfileView from '../views/FreelanceProfileView.vue';
-// import MissionsView from '../views/MissionsView.vue';
+// Vues principales
+import HomeView from '@/views/HomeView.vue';
+import LoginView from '@/views/LoginView.vue';
+import RegisterView from '@/views/RegisterView.vue';
+import DashboardView from '@/views/DashboardView.vue';
 
-// import MissionsViewClient from '@/views/MissionsViewClient.vue';
-
-import { useAuthStore } from '@/stores/auth'; // Import pour le guard
+// Vues Freelance
+import AvailableMissionsView from '@/views/AvailableMissionView.vue';
 import MissionDetailsView from '@/views/MissionDetailsView.vue';
-import CreateMissionView from '@/views/CreateMissionView.vue';
-import ClientMissionView from '@/views/ClientMissionView.vue';
-import ClientMissionDetailView from '@/views/ClientMissionDetailView.vue';
 import ApplyMissionView from '@/views/ApplyMissionView.vue';
-import PortfolioView from '@/views/PortfolioVue.vue'
+import CandidatureView from '@/views/CandidatureView.vue';
+
+// Vues Client
+import CreateMissionView from '@/views/CreateMissionView.vue';
+import ClientMissionsView from '@/views/ClientMissionView.vue';
+import ClientMissionDetailView from '@/views/ClientMissionDetailView.vue';
+import PortfolioView from '@/views/PortfolioVue.vue';
+import ManageApplicationsView from '@/views/ManageApplicationsView.vue';
+
+
+// Store Auth pour le guard
+import { useAuthStore } from '@/stores/auth';
 
 const routes = [
+  // Routes publiques
+  { 
+    path: '/', 
+    name: 'Home', 
+    component: HomeView,
+    meta: { title: 'Accueil - Plateforme Freelance' }
+  },
+  { 
+    path: '/login', 
+    name: 'Login', 
+    component: LoginView,
+    meta: { 
+      requiresGuest: true, // ✅ NOUVEAU: empêche les utilisateurs connectés d'accéder
+      title: 'Connexion'
+    }
+  },
+  { 
+    path: '/register', 
+    name: 'Register', 
+    component: RegisterView,
+    meta: { 
+      requiresGuest: true, // ✅ NOUVEAU: empêche les utilisateurs connectés d'accéder
+      title: 'Inscription'
+    }
+  },
 
-    { path: '/', name: 'Home', component: HomeView },
-    { path: '/login', name: 'Login', component: LoginView },
-    { path: '/register', name: 'Register', component: RegisterView },
-   
-    // Les routes protégées
-    { 
-        path: '/dashboard', 
-        name: 'Dashboard', 
-        component: DashboardView, 
-        meta: { requiresAuth: true, roles: ['FREELANCE','CLIENT','USER'] } 
-    },
- {
-  path: '/missions',
-  name: 'AvailableMissions',
-  component: AvailableMissionsview,
-  meta: { requiresAuth: true, roles: ['FREELANCE'] }
-},
-{
-  path: '/missions/:id',
-  name: 'MissionDetails',
-  component: MissionDetailsView,
-  meta: { requiresAuth: true, roles: ['FREELANCE'] }
-},
-{
-  path: '/missions/:id/apply',
-  name: 'ApplyMission',
-  component: ApplyMissionView,
-  meta: { requiresAuth: true, roles: ['FREELANCE'] }
-},
-{
-  path: '/missions/create',
-  name: 'CreateMission',
-  component: CreateMissionView,
-  meta: { requiresAuth: true, roles: ['CLIENT'] }
-},
-{
-  path: '/portfolio',
-  name: 'PORTFOLIO',
-  component: PortfolioView,
-  meta: {requiresAuth: true,role: ['CLIENT']}
-},
+  // Dashboard (auth toutes roles)
+  { 
+    path: '/dashboard', 
+    name: 'Dashboard', 
+    component: DashboardView, 
+    meta: { 
+      requiresAuth: true, 
+      title: 'Tableau de bord'
+    }
+  },
+
+  // Routes Freelance
   {
-  path: '/client/missions',
-  name: 'ClientMissions',
-  component: ClientMissionView,
-  meta: { requiresAuth: true, roles: ['CLIENT'] }
-  }, 
+    path: '/missions',
+    name: 'AvailableMissions',
+    component: AvailableMissionsView,
+    meta: { 
+      requiresAuth: true, 
+      requiresRole: 'FREELANCE', // ✅ NOUVEAU: plus spécifique
+      title: 'Missions Disponibles'
+    }
+  },
   {
-  path: '/client/missions/:id',
-  name: 'ClientMissionDetails',
-  component: ClientMissionDetailView,
-  meta: { requiresAuth: true, roles: ['CLIENT'] }
-}
+    path: '/missions/:id',
+    name: 'MissionDetails',
+    component: MissionDetailsView,
+    meta: { 
+      requiresAuth: true, 
+      requiresRole: 'FREELANCE',
+      title: 'Détails Mission'
+    }
+  },
+  {
+    path: '/missions/:id/apply',
+    name: 'ApplyMission',
+    component: ApplyMissionView,
+    meta: { 
+      requiresAuth: true, 
+      requiresRole: 'FREELANCE',
+      title: 'Postuler à une Mission'
+    }
+  },
+    {
+    path: '/applications',
+    name: 'candidatureView',
+    component: CandidatureView,
+    meta: { 
+      requiresAuth: true, 
+      requiresRole: 'FREELANCE',
+      title: 'Mission postulées'
+    }
+  },
+
+  // Routes Client
+  {
+    path: '/missions/create',
+    name: 'CreateMission',
+    component: CreateMissionView,
+    meta: { 
+      requiresAuth: true, 
+      requiresRole: 'CLIENT',
+      title: 'Créer une Mission'
+    }
+  },
+  {
+    path: '/client/missions',
+    name: 'ClientMissions',
+    component: ClientMissionsView,
+    meta: { 
+      requiresAuth: true, 
+      requiresRole: 'CLIENT',
+      title: 'Mes Missions'
+    }
+  },
+  {
+    path: '/client/missions/:id',
+    name: 'ClientMissionDetails',
+    component: ClientMissionDetailView,
+    meta: { 
+      requiresAuth: true, 
+      requiresRole: 'CLIENT',
+      title: 'Détails Mission Client'
+    }
+  },
+  {
+    path: '/portfolio',
+    name: 'Portfolio',
+    component: PortfolioView,
+    meta: { 
+      requiresAuth: true,
+      title: 'Portfolio'
+    }
+  },
+  {
+    path: '/missions/:id/applications',
+    name: 'manage-applications',
+    component: ManageApplicationsView,
+    meta: { requiresAuth: true, requiresRole: 'CLIENT' }
+  },
+
+ 
+
+  // Route 404
+  {
+    path: '/:catchAll(.*)',
+    name: 'NotFound',
+    component: () => import('@/views/NotFound.vue'),
+    meta: { title: 'Page non trouvée' }
+  }
 ];
 
 const router = createRouter({
-    history: createWebHistory(import.meta.env.BASE_URL),
-    routes,
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes
 });
 
-// Guard de Navigation GLOBAL
+// Gestion du titre de page
+router.beforeEach((to) => {
+  document.title = to.meta.title || 'Plateforme Freelance'
+})
+
+// Guard de navigation global
 router.beforeEach(async (to, from, next) => {
-    const authStore = useAuthStore();
+  const authStore = useAuthStore();
+  
+  // Récupérer les métadonnées
+  const requiresAuth = to.meta.requiresAuth;
+  const requiresGuest = to.meta.requiresGuest;
+  const requiresRole = to.meta.requiresRole;
+  const allowedRoles = to.meta.roles;
 
-    // ✅ Charger le user UNE SEULE FOIS
-    if (!authStore.userLoaded) {
-        await authStore.profile();   // profile() ne throw plus → pas de boucle
+  // ✅ 1. Gestion des routes pour invités (login, register)
+  if (requiresGuest) {
+    if (authStore.isAuthenticated) {
+      // Utilisateur déjà connecté → rediriger vers dashboard
+      return next({ name: 'Dashboard' });
+    }
+    return next();
+  }
+
+  // ✅ 2. Vérification si la route nécessite une authentification
+  if (requiresAuth) {
+    // Si non authentifié, rediriger vers login avec redirect
+    if (!authStore.isAuthenticated) {
+      return next({ 
+        name: 'Login', 
+        query: { redirect: to.fullPath } 
+      });
     }
 
-    const isAuthenticated = authStore.isAuthenticated;
-    const requiredAuth = to.meta.requiresAuth;
-    const requiredRoles = to.meta.roles;
-
-    // ✅ Si la route nécessite une auth mais user pas connecté
-    if (requiredAuth && !isAuthenticated) {
+    // ✅ CORRECTION ICI: Utiliser getProfile() au lieu de profile()
+    // Charger le profil utilisateur s'il n'est pas déjà chargé
+    if (!authStore.userLoaded && authStore.isAuthenticated) {
+      try {
+        await authStore.getProfile(); // ✅ LA BONNE MÉTHODE
+      } catch (error) {
+        console.error('Erreur chargement profil:', error);
+        // En cas d'erreur, déconnecter et rediriger
+        authStore.logout(false);
         return next({ name: 'Login' });
+      }
     }
 
-    // ✅ Si la route nécessite un rôle mais user pas chargé
-    if (requiredRoles && (!authStore.user || !requiredRoles.includes(authStore.user.role))) {
+    // ✅ 3. Vérification des rôles (ancienne méthode avec roles array)
+    if (allowedRoles && allowedRoles.length > 0) {
+      const userRole = authStore.user?.role?.name || authStore.user?.role;
+      
+      if (!userRole || !allowedRoles.includes(userRole)) {
+        // Rôle non autorisé → rediriger vers page d'accueil
+        console.warn(`Accès refusé: ${userRole} n'a pas accès à cette route`);
         return next({ name: 'Home' });
+      }
     }
 
-    // ✅ Toujours appeler next()
-    next();
+    // ✅ 4. Vérification des rôles (nouvelle méthode avec requiresRole)
+    if (requiresRole) {
+      const userRole = authStore.user?.role?.name || authStore.user?.role;
+      
+      if (!userRole) {
+        console.warn('Rôle utilisateur non défini');
+        return next({ name: 'Home' });
+      }
+      
+      // Normaliser les rôles pour la comparaison
+      const userRoleUpper = userRole.toUpperCase();
+      const requiredRoleUpper = requiresRole.toUpperCase();
+      
+      if (userRoleUpper !== requiredRoleUpper) {
+        // Rôle incorrect → rediriger vers le dashboard approprié
+        if (authStore.isClient) {
+          return next({ name: 'Dashboard' });
+        } else if (authStore.isFreelance) {
+          return next({ name: 'Dashboard' });
+        }
+        return next({ name: 'Home' });
+      }
+    }
+
+    // ✅ 5. Tout est bon, autoriser l'accès
+    return next();
+  }
+
+  // ✅ 6. Routes publiques (pas de requiresAuth)
+  next();
 });
+
+// Intercepteur pour les erreurs de navigation
+router.onError((error, to, from) => {
+  console.error('Erreur navigation:', error);
+  
+  // Si c'est une erreur de chargement de module, recharger la page
+  if (error.message.includes('Failed to fetch dynamically imported module')) {
+    window.location.reload();
+  }
+});
+
 export default router;
