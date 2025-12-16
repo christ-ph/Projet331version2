@@ -23,6 +23,7 @@ import ManageApplicationsView from '@/views/ManageApplicationsView.vue';
 
 // Store Auth pour le guard
 import { useAuthStore } from '@/stores/auth';
+import { useProfileStore } from '@/stores/profile';
 import ProfilesFreelance from '@/views/ProfilesFreelance.vue';
 
 const routes = [
@@ -215,7 +216,9 @@ router.beforeEach(async (to, from, next) => {
     // Charger le profil utilisateur s'il n'est pas déjà chargé
     if (!authStore.userLoaded && authStore.isAuthenticated) {
       try {
-        await authStore.getProfile(); // ✅ LA BONNE MÉTHODE
+
+        const profileStore = useProfileStore();
+        await profileStore.getMyProfile(); // ✅ LA BONNE MÉTHODE
       } catch (error) {
         console.error('Erreur chargement profil:', error);
         // En cas d'erreur, déconnecter et rediriger
