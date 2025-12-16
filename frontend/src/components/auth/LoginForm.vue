@@ -22,6 +22,7 @@ const login = async () => {
 
     setTimeout(() => {
       router.push('/dashboard');
+      window.location.reload();
     }, 300);
 
   } catch (error) {
