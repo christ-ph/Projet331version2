@@ -475,6 +475,7 @@ async function deletePortfolio(id) {
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   margin-bottom: 30px;
+  min-width: 600px;
 }
 
 .profile-header {

@@ -12,19 +12,19 @@ import AvailableMissionsView from '@/views/AvailableMissionView.vue';
 import MissionDetailsView from '@/views/MissionDetailsView.vue';
 import ApplyMissionView from '@/views/ApplyMissionView.vue';
 import CandidatureView from '@/views/CandidatureView.vue';
+import ProfilesFreelance from '@/views/ProfilesFreelance.vue';
 
 // Vues Client
 import CreateMissionView from '@/views/CreateMissionView.vue';
 import ClientMissionsView from '@/views/ClientMissionView.vue';
 import ClientMissionDetailView from '@/views/ClientMissionDetailView.vue';
-import PortfolioView from '@/views/PortfolioVue.vue';
 import ManageApplicationsView from '@/views/ManageApplicationsView.vue';
-
+import ProfilesClient from '@/views/ProfilesClient.vue';
 
 // Store Auth pour le guard
 import { useAuthStore } from '@/stores/auth';
 import { useProfileStore } from '@/stores/profile';
-import ProfilesFreelance from '@/views/ProfilesFreelance.vue';
+
 
 const routes = [
   // Routes publiques
@@ -147,12 +147,13 @@ const routes = [
     }
   },
   {
-    path: '/portfolio',
-    name: 'Portfolio',
-    component: PortfolioView,
+    path: '/client-profile',
+    name: 'PROFILECLIENT',
+    component: ProfilesClient,
     meta: { 
       requiresAuth: true,
-      title: 'Portfolio'
+      title: 'Profils Client',
+      requiresRole: 'CLIENT'
     }
   },
   {

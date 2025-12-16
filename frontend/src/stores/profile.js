@@ -119,11 +119,11 @@ export const useProfileStore = defineStore('profile', {
       try {
         const response = await axios.put('/api/profiles/', data);
 
-        // ✅ Mettre à jour le user si retourné (en cas de changement de rôle par exemple)
-        if (response.data.user) {
-          const authStore = useAuthStore();
-          authStore.updateUser(response.data.user);
-        }
+  
+        // if (response.data.user) {
+        //   const authStore = useAuthStore();
+        //   authStore.updateUser(response.data.user);
+        // }
 
         // ✅ Recharger le profil pour avoir les données fraîches
         await this.getMyProfile();
