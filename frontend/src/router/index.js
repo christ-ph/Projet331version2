@@ -23,6 +23,7 @@ import ManageApplicationsView from '@/views/ManageApplicationsView.vue';
 
 // Store Auth pour le guard
 import { useAuthStore } from '@/stores/auth';
+import ProfilesFreelance from '@/views/ProfilesFreelance.vue';
 
 const routes = [
   // Routes publiques
@@ -103,7 +104,16 @@ const routes = [
       title: 'Mission postulées'
     }
   },
-
+  {
+    path: '/freelance-profile',
+    name: 'ProfileFreelance',
+    component: ProfilesFreelance,
+    meta: { 
+      requiresAuth: true, 
+      requiresRole: 'FREELANCE',
+      title: 'Profils Freelance'
+    }
+  },
   // Routes Client
   {
     path: '/missions/create',
