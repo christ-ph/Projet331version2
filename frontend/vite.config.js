@@ -1,45 +1,26 @@
-// import { fileURLToPath, URL } from 'node:url'
-
-// import { defineConfig } from 'vite'
-// import vue from '@vitejs/plugin-vue'
-// import vueDevTools from 'vite-plugin-vue-devtools'
-
-// // https://vite.dev/config/
-// export default defineConfig({
-//   plugins: [
-//     vue(),
-//     vueDevTools(),
-//   ],
-//   resolve: {
-//     alias: {
-//       '@': fileURLToPath(new URL('./src', import.meta.url))
-//     },
-//   },
-// })
-
-
-// Fichier frontend/vite.config.js
-
+import { defineConfig, loadEnv } from 'vite'
+import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-
-// https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [
-    vue(),
-  ],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
-  },
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
   
-  // 🚨 AJOUT CRUCIAL : Désactiver la fonctionnalité qui ouvre l'éditeur
-  server: {
-    open: false, // Empêche l'ouverture automatique du navigateur
-    // 'editor' contrôle la fonctionnalité click-to-open. Mettre null ou false la désactive.
-    editor: null, 
+  return {
+    plugins: [vue()],
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url))
+      }
+    },
+    server: {
+      port: 5173,
+      proxy: mode === 'development' ? {
+        '/api': {
+          target: 'http://localhost:5000',
+          changeOrigin: true
+        }
+      } : undefined
+    }
   }
-})
+}
+)

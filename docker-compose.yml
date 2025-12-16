@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # Base de données PostgreSQL
+  db:
+    image: postgres:16-alpine
+    container_name: freelance_db
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - freelance_network
+
+  # Backend Flask
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: freelance_backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      MAIL_SERVER: ${MAIL_SERVER}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+    depends_on:
+      - db
+    networks:
+      - freelance_network
+
+  # Frontend Vue.js + Nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: freelance_frontend
+    restart: always
+    ports:
+      - "${EXTERNAL_PORT}:80"  # Port externe : 8080 (configurable)
+    depends_on:
+      - backend
+    networks:
+      - freelance_network
+
+networks:
+  freelance_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
