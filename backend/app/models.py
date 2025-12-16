@@ -133,3 +133,14 @@ class Portfolio(db.Model):
     created_at = db.Column(db.DateTime, default=db.func.now())
 
     profile_id = db.Column(db.Integer, db.ForeignKey('profile.id'), nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'profile_id': self.profile_id,
+            'title': self.title,
+            'description': self.description,
+            'url': self.url,
+            'image_url': self.image_url,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
