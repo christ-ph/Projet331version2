@@ -1,1 +1,17 @@
-backend/.env
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environnement
+.env
+venv/
+.env.*
+
+# Node
+node_modules/
+dist/
+.vite/
+.env
+.env.*

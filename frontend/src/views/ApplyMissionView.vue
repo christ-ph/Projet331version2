@@ -1,41 +1,45 @@
 <template>
   <div class="apply-page">
-
     <h1>Postuler à la mission</h1>
 
-    <!-- ✅ Détails de la mission -->
+    <!-- Détails mission -->
     <div v-if="mission" class="mission-details-card">
       <h2>{{ mission.title }}</h2>
 
       <p class="desc">{{ mission.description }}</p>
 
       <div class="info">
-        <p><strong>Budget :</strong> {{ mission.budget }} €</p>
-        <p><strong>Durée :</strong> {{ mission.duration }}</p>
-        <p><strong>Compétences :</strong> {{ mission.required_skills }}</p>
+        <p><strong>Budget :</strong> {{ mission.budget ?? 'Non défini' }} €</p>
+        <p v-if="mission.deadline">
+          <strong>Date limite :</strong>
+          {{ new Date(mission.deadline).toLocaleDateString() }}
+        </p>
+        <p v-if="mission.required_skills?.length">
+          <strong>Compétences :</strong>
+          {{ mission.required_skills.join(', ') }}
+        </p>
       </div>
     </div>
 
     <!-- Chargement -->
-    <div v-if="missionsStore.loading" class="loading">
+    <div v-if="loading" class="loading">
       Envoi de la candidature...
     </div>
 
     <!-- Erreur -->
-    <div v-if="missionsStore.error" class="error">
-      {{ missionsStore.error }}
+    <div v-if="error" class="error">
+      {{ error }}
     </div>
 
     <!-- Formulaire -->
     <form v-if="!submitted" @submit.prevent="submit" class="apply-form">
+      <p>
+        Vous êtes sur le point de postuler à cette mission.
+      </p>
 
-      <label>Lettre de motivation</label>
-      <textarea v-model="form.proposal" required></textarea>
-
-      <label>Budget proposé (€)</label>
-      <input type="number" v-model="form.proposed_budget" required />
-
-      <button type="submit" class="submit-btn">Envoyer ma candidature</button>
+      <button type="submit" class="submit-btn">
+        Envoyer ma candidature
+      </button>
     </form>
 
     <!-- Confirmation -->
@@ -43,47 +47,52 @@
       ✅ Votre candidature a été envoyée avec succès !
       <button @click="goBack">Retour aux missions</button>
     </div>
-
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, onMounted, computed } from 'vue';
-import { useMissionStore } from '@/stores/missions';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useMissionStore } from '@/stores/missions'
+import { usePostulationStore } from '@/stores/postulations'
 
-const missionsStore = useMissionStore();
-const route = useRoute();
-const router = useRouter();
+const route = useRoute()
+const router = useRouter()
 
-const missionId = route.params.id;
-const submitted = ref(false);
+const missionStore = useMissionStore()
+const postulationStore = usePostulationStore()
 
-const form = reactive({
-  proposal: "",
-  proposed_budget: ""
-});
+const missionId = route.params.id
 
-// ✅ Charger les détails de la mission
+const submitted = ref(false)
+const loading = ref(false)
+const error = ref(null)
+
 onMounted(async () => {
-  await missionsStore.fetchMissionDetails(missionId);
-});
+  await missionStore.fetchMission(missionId)
+})
 
-const mission = computed(() => missionsStore.missionDetails);
+const mission = computed(() => missionStore.currentMission)
 
-async function submit() {
+const submit = async () => {
+  loading.value = true
+  error.value = null
+
   try {
-    await missionsStore.applyToMission(missionId, form);
-    submitted.value = true;
-  } catch (err) {
-    console.error("Erreur lors de la candidature :", err);
+    await postulationStore.apply(missionId)
+    submitted.value = true
+  } catch (e) {
+    error.value = e.response?.data?.error || 'Erreur lors de la candidature'
+  } finally {
+    loading.value = false
   }
 }
 
-function goBack() {
-  router.push('/missions');
+const goBack = () => {
+  router.push('/missions')
 }
 </script>
+
 
 <style scoped>
 .apply-page {

@@ -1,6 +1,26 @@
 from app import db
 from flask_bcrypt import Bcrypt
+import enum
+
 bcrypt = Bcrypt()
+
+# ============================
+# ENUMS
+# ============================
+
+class MissionStatus(enum.Enum):
+    DRAFT = "draft"         
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+class PostulationStatus(enum.Enum):
+    PENDING = "pending"     
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
 
 # ============================
 # ROLE
@@ -133,3 +153,64 @@ class Portfolio(db.Model):
     created_at = db.Column(db.DateTime, default=db.func.now())
 
     profile_id = db.Column(db.Integer, db.ForeignKey('profile.id'), nullable=False)
+
+
+# ============================
+# MISSION
+# ============================
+
+class Mission(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+
+    budget = db.Column(db.Float, nullable=True)
+    deadline = db.Column(db.DateTime, nullable=True)
+    required_skills = db.Column(db.JSON, nullable=True) 
+
+    status = db.Column(db.Enum(MissionStatus), default=MissionStatus.OPEN, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
+
+    # Relation avec le client (User qui a role = client)
+    client_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    client = db.relationship(
+        'User',
+        foreign_keys=[client_id],
+        backref=db.backref('missions', lazy='dynamic')
+    )
+
+    # Relation avec les postulations (freelances qui postulent)
+    postulations = db.relationship(
+        'Postulation',
+        backref='mission',
+        lazy='dynamic',
+        cascade="all, delete-orphan"
+    )
+
+
+# ============================
+# POSTULATION
+# ============================
+
+class Postulation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    status = db.Column(db.Enum(PostulationStatus), default=PostulationStatus.PENDING, nullable=False)
+
+    # Relation vers la mission
+    mission_id = db.Column(db.Integer, db.ForeignKey('mission.id'), nullable=False)
+
+    # Relation vers le freelance (User avec role = freelance)
+    freelance_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    freelance = db.relationship(
+        'User',
+        backref=db.backref('postulations', lazy='dynamic')
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint('mission_id', 'freelance_id', name='uq_postulation_mission_freelance'),
+    )

@@ -30,13 +30,9 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix='/auth') # J'ajoute /auth ici pour la clarté
 
     from app.profiles.routes import profile_bp
+    from app.missions.routes import missions_bp
     app.register_blueprint(profile_bp, url_prefix='/api/profiles')
-    
-    from app.portfolio.routes import portfolio_bp
-    app.register_blueprint(portfolio_bp, url_prefix='/api/portfolio')
-    # # NOUVEAU : Enregistrement du Blueprint des Missions
-    # from app.missions.routes import missions_bp
-    # app.register_blueprint(missions_bp)
+    app.register_blueprint(missions_bp , url_prefix='/api/missions')
 
     # from app.chats.routes import chat_bp
     # app.register_blueprint(chat_bp) 
