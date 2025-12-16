@@ -75,105 +75,103 @@ export const useAuthStore = defineStore('auth', {
      * POST /auth/login
      */
     async login(email, password) {
-      this.isLoading = true
-      try {
-        const res = await axios.post('/auth/login', { email, password })
+  this.isLoading = true;
+  
+  try {
+    const response = await axios.post('/auth/login', { email, password });
+    const { access_token, user } = response.data;
 
-        this.token = res.data.access_token
-        this.user = res.data.user
-        this.isAuthenticated = true
-        this.userLoaded = true
+    // ✅ Mettre à jour le state
+    this.token = access_token;
+    this.user = user;
 
-        localStorage.setItem('access_token', this.token)
-        localStorage.setItem('user', JSON.stringify(this.user))
+    // ✅ Sauvegarder dans localStorage
+    localStorage.setItem('access_token', access_token);
+    localStorage.setItem('user', JSON.stringify(user));
 
-        axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
+    // ✅ L'intercepteur Axios ajoutera automatiquement le header
+    // Mais on peut le faire manuellement aussi (optionnel)
+    axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
 
-        return { success: true }
-      } catch (error) {
-        if (error.response?.status === 403) {
-          return {
-            success: false,
-            type: 'unverified',
-            message: 'Veuillez vérifier votre email.'
-          }
-        }
+    return true;
 
-        this.logout(false)
-        return {
-          success: false,
-          message: error.response?.data?.msg || 'Erreur de connexion'
-        }
-      } finally {
-        this.isLoading = false
-      }
-    },
+  } catch (error) {
+    // ✅ Cas spécial : Email non vérifié (403)
+    if (error.response?.status === 403) {
+      throw { 
+        type: 'unverified', 
+        message: error.response.data?.msg || 'Veuillez vérifier votre email.' 
+      };
+    }
 
-    /**
-     * REGISTER
-     * POST /auth/register
-     */
-    async register(payload) {
-      this.isLoading = true
-      try {
-        const res = await axios.post('/auth/register', payload)
-        return {
-          success: true,
-          message: res.data.msg
-        }
-      } catch (error) {
-        return {
-          success: false,
-          message: error.response?.data?.msg || 'Erreur inscription'
-        }
-      } finally {
-        this.isLoading = false
-      }
-    },
+    // ✅ Toutes les autres erreurs (401, 500, etc.)
+    console.error('Erreur lors du login:', error);
+    throw error;
 
-    /**
-     * VERIFY EMAIL
-     * POST /auth/verify-email
-     */
-    async verifyEmail(email, code) {
-      this.isLoading = true
-      try {
-        const res = await axios.post('/auth/verify-email', { email, code })
-        return {
-          success: true,
-          message: res.data.msg
-        }
-      } catch (error) {
-        return {
-          success: false,
-          message: error.response?.data?.msg || 'Code invalide'
-        }
-      } finally {
-        this.isLoading = false
-      }
-    },
+  } finally {
+    this.isLoading = false;
+  }
+},
 
-    /**
-     * RESEND CODE
-     * POST /auth/resend-code
-     */
-    async resendCode(email) {
-      this.isLoading = true
-      try {
-        const res = await axios.post('/auth/resend-code', { email })
-        return {
-          success: true,
-          message: res.data.msg
-        }
-      } catch (error) {
-        return {
-          success: false,
-          message: error.response?.data?.msg || 'Erreur envoi code'
-        }
-      } finally {
-        this.isLoading = false
-      }
-    },
+  /**
+ * REGISTER
+ * POST /auth/register
+ */
+async register(email, password) {
+  this.isLoading = true;
+  
+  try {
+    const response = await axios.post('/auth/register', { email, password });
+    return response.data;
+    
+  } catch (error) {
+    console.error('Erreur lors de l\'inscription:', error);
+    throw error;  // ✅ Throw l'erreur
+    
+  } finally {
+    this.isLoading = false;
+  }
+},
+
+/**
+ * VERIFY EMAIL
+ * POST /auth/verify-email
+ */
+async verifyEmail(email, code) {
+  this.isLoading = true;
+  
+  try {
+    const response = await axios.post('/auth/verify-email', { email, code });
+    return response.data;
+    
+  } catch (error) {
+    console.error('Erreur lors de la vérification:', error);
+    throw error;  // ✅ Throw l'erreur
+    
+  } finally {
+    this.isLoading = false;
+  }
+},
+
+/**
+ * RESEND CODE
+ * POST /auth/resend-code
+ */
+async resendCode(email) {
+  this.isLoading = true;
+  
+  try {
+    const response = await axios.post('/auth/resend-code', { email });
+    return response.data;
+    
+  } catch (error) {
+    console.error('Erreur lors du renvoi du code:', error);
+    throw error;  // ✅ Throw l'erreur
+    
+  } finally {
+    this.isLoading = false;
+  }
+},
 
     /**
      * ROUTE PROTÉGÉE (équivalent profil simple)
