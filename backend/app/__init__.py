@@ -32,8 +32,11 @@ def create_app():
     app.register_blueprint(portfolio_bp, url_prefix='/api/portfolio')
     from app.profiles.routes import profile_bp
     from app.missions.routes import missions_bp
+    from app.livrable.routes import deliverables_bp
+    app.register_blueprint(deliverables_bp, url_prefix='/api/deliverables')
     app.register_blueprint(profile_bp, url_prefix='/api/profiles')
     app.register_blueprint(missions_bp , url_prefix='/api/missions')
+
 
     # from app.chats.routes import chat_bp
     # app.register_blueprint(chat_bp) 

@@ -69,7 +69,7 @@
         class="application-card"
         :class="app.status"
       >
-        <!-- En-tête -->
+        <!-- En-tête avec statut -->
         <div class="card-header">
           <div class="application-status">
             <span :class="`status-badge ${app.status}`">
@@ -81,18 +81,32 @@
               Postulé le {{ formatDate(app.created_at) }}
             </span>
           </div>
-          <button 
-            @click="cancelApplication(app.id)"
-            v-if="app.status === 'pending'"
-            class="cancel-btn"
-            :disabled="cancellingApp === app.id"
-          >
-            <i class="fas fa-times"></i>
-            Annuler
-          </button>
+          
+          <!-- Boutons d'action selon le statut -->
+          <div class="action-buttons">
+            <button 
+              @click="cancelApplication(app.id)"
+              v-if="app.status === 'pending'"
+              class="cancel-btn"
+              :disabled="cancellingApp === app.id"
+            >
+              <i class="fas fa-times"></i>
+              Annuler
+            </button>
+            
+            <!-- Bouton pour créer un livrable si accepté -->
+            <button 
+              @click="createDeliverableForMission(app)"
+              v-if="app.status === 'accepted' && app.mission?.status === 'in_progress'"
+              class="create-deliverable-btn"
+            >
+              <i class="fas fa-file-upload"></i>
+              Créer livrable
+            </button>
+          </div>
         </div>
 
-        <!-- Mission -->
+        <!-- Informations de la mission -->
         <div class="mission-info">
           <h3 class="mission-title">
             <i class="fas fa-briefcase"></i>
@@ -108,6 +122,20 @@
             <div v-if="getMissionDeadline(app)" class="detail">
               <i class="far fa-clock"></i>
               <span>Date limite: {{ formatDate(getMissionDeadline(app)) }}</span>
+            </div>
+            
+            <div class="detail">
+              <i class="fas fa-info-circle"></i>
+              <span>Statut mission: <strong>{{ getMissionStatusLabel(app.mission?.status) }}</strong></span>
+            </div>
+          </div>
+
+          <!-- Message de candidature -->
+          <div v-if="app.message" class="application-message">
+            <i class="fas fa-comment"></i>
+            <div class="message-content">
+              <strong>Votre message:</strong>
+              <p>{{ app.message }}</p>
             </div>
           </div>
 
@@ -135,15 +163,28 @@
           </div>
         </div>
 
-        <!-- Client -->
+        <!-- Informations client -->
         <div v-if="getClientInfo(app)" class="client-info">
           <div class="client-label">
             <i class="fas fa-user-tie"></i>
             <span>Client</span>
           </div>
-          <p class="client-name">
-            {{ getClientName(app) }}
-          </p>
+          <div class="client-details">
+            <p class="client-name">{{ getClientName(app) }}</p>
+            <div v-if="getClientRating(app)" class="client-rating">
+              <i class="fas fa-star"></i>
+              <span>{{ getClientRating(app) }}/5</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feedback si rejeté -->
+        <div v-if="app.status === 'rejected' && app.feedback" class="feedback-section">
+          <div class="feedback-label">
+            <i class="fas fa-comment-alt"></i>
+            <span>Feedback du client</span>
+          </div>
+          <p class="feedback-content">{{ app.feedback }}</p>
         </div>
 
         <!-- Actions -->
@@ -155,6 +196,15 @@
           >
             <i class="fas fa-eye"></i>
             Voir la mission
+          </button>
+          
+          <button 
+            @click="viewMissionDeliverables(getMissionId(app))"
+            v-if="app.status === 'accepted'"
+            class="btn-deliverables"
+          >
+            <i class="fas fa-file-alt"></i>
+            Voir livrables
           </button>
         </div>
       </div>
@@ -178,6 +228,29 @@
         <span class="stat-label">{{ stat.label }}</span>
       </div>
     </div>
+    
+    <!-- Modal de création de livrable -->
+    <div v-if="showDeliverableModal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3><i class="fas fa-file-upload"></i> Créer un livrable</h3>
+          <button @click="closeDeliverableModal" class="modal-close">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <p class="modal-info">
+            Pour la mission: <strong>{{ selectedMissionTitle }}</strong>
+          </p>
+          <DeliverableForm
+            :mission-id="selectedMissionId"
+            @submit="handleDeliverableSubmit"
+            @cancel="closeDeliverableModal"
+          />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -185,13 +258,21 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePostulationStore } from '@/stores/postulations'
+import { useMissionStore } from '@/stores/missions'
+import { useDeliverablesStore } from '@/stores/deliverables'
+import DeliverableForm from '@/components/deliverables/DeliverableForm.vue'
 
 const router = useRouter()
 const postulationsStore = usePostulationStore()
+const missionsStore = useMissionStore()
+const deliverablesStore = useDeliverablesStore()
 
 // États
 const statusFilter = ref('')
 const cancellingApp = ref(null)
+const showDeliverableModal = ref(false)
+const selectedMissionId = ref(null)
+const selectedMissionTitle = ref('')
 
 // Filtres de statut
 const statusFilters = [
@@ -232,24 +313,28 @@ const filteredApplications = computed(() => {
     apps = apps.filter(app => app.status === statusFilter.value)
   }
   
+  // Trier par date (plus récent d'abord)
+  apps.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  
   console.log('📱 Candidatures filtrées:', apps.length)
   return apps
 })
 
 // Statistiques par statut
 const statusStats = computed(() => {
-  const stats = {}
+  const stats = []
   
   statusFilters.forEach(filter => {
     if (filter.value) {
-      stats[filter.value] = {
+      stats.push({
+        status: filter.value,
         count: getCountByStatus(filter.value),
         label: filter.label
-      }
+      })
     }
   })
   
-  return Object.values(stats)
+  return stats
 })
 
 // Compter par statut
@@ -301,6 +386,18 @@ const getMissionSkills = (app) => {
   return app.mission?.required_skills || []
 }
 
+// Obtenir le statut de la mission formaté
+const getMissionStatusLabel = (status) => {
+  const labels = {
+    'draft': 'Brouillon',
+    'open': 'Publiée',
+    'in_progress': 'En cours',
+    'completed': 'Terminée',
+    'cancelled': 'Annulée'
+  }
+  return labels[status] || status
+}
+
 // Obtenir les infos client
 const getClientInfo = (app) => {
   return app.client || null
@@ -312,8 +409,14 @@ const getClientName = (app) => {
   
   if (app.client.fullname) return app.client.fullname
   if (app.client.company_name) return app.client.company_name
+  if (app.client.username) return app.client.username
   
   return 'Client'
+}
+
+// Obtenir la note du client
+const getClientRating = (app) => {
+  return app.client?.rating || null
 }
 
 // Obtenir l'icône du statut
@@ -366,6 +469,55 @@ const viewMission = (missionId) => {
   }
 }
 
+// Voir les livrables de la mission
+const viewMissionDeliverables = (missionId) => {
+  if (missionId) {
+    router.push(`/missions/${missionId}/deliverables`)
+  }
+}
+
+// Créer un livrable pour une mission acceptée
+const createDeliverableForMission = (app) => {
+  const missionId = getMissionId(app)
+  const missionTitle = getMissionTitle(app)
+  
+  if (missionId) {
+    selectedMissionId.value = missionId
+    selectedMissionTitle.value = missionTitle
+    showDeliverableModal.value = true
+  } else {
+    alert('Impossible de créer un livrable: mission non trouvée')
+  }
+}
+
+// Gérer la création de livrable
+const handleDeliverableSubmit = async (formData) => {
+  try {
+    await deliverablesStore.createDeliverable(formData)
+    
+    // Fermer le modal
+    closeDeliverableModal()
+    
+    // Feedback
+    alert('✅ Livrable créé avec succès !')
+    
+    // Rediriger vers la page des livrables de la mission
+    if (selectedMissionId.value) {
+      router.push(`/missions/${selectedMissionId.value}/deliverables`)
+    }
+  } catch (error) {
+    console.error('Erreur création livrable:', error)
+    alert(error.response?.data?.error || 'Erreur lors de la création du livrable')
+  }
+}
+
+// Fermer le modal de création de livrable
+const closeDeliverableModal = () => {
+  showDeliverableModal.value = false
+  selectedMissionId.value = null
+  selectedMissionTitle.value = ''
+}
+
 // Annuler une candidature
 const cancelApplication = async (appId) => {
   if (!confirm('Voulez-vous vraiment annuler cette candidature ?')) return
@@ -376,6 +528,8 @@ const cancelApplication = async (appId) => {
     // À implémenter dans votre backend
     await postulationsStore.cancelApplication(appId)
     await loadData() // Recharger après annulation
+    
+    alert('✅ Candidature annulée avec succès')
   } catch (error) {
     console.error('Erreur annulation:', error)
     alert(error.response?.data?.error || 'Erreur lors de l\'annulation')
@@ -641,6 +795,19 @@ h1 {
 
 .application-card.accepted {
   border-left-color: #10b981;
+  position: relative;
+  overflow: hidden;
+}
+
+.application-card.accepted::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+  clip-path: polygon(100% 0, 0 0, 100% 100%);
 }
 
 .application-card.rejected {
@@ -689,6 +856,7 @@ h1 {
 .status-badge.accepted {
   background: #d1fae5;
   color: #065f46;
+  animation: pulse 2s infinite;
 }
 
 .status-badge.rejected {
@@ -701,12 +869,27 @@ h1 {
   color: #4b5563;
 }
 
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+}
+
 .application-date {
   font-size: 14px;
   color: #64748b;
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Boutons d'action */
+.action-buttons {
+  display: flex;
+  gap: 10px;
 }
 
 .cancel-btn {
@@ -725,11 +908,33 @@ h1 {
 
 .cancel-btn:hover:not(:disabled) {
   background: #fee2e2;
+  transform: translateY(-1px);
 }
 
 .cancel-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.create-deliverable-btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+}
+
+.create-deliverable-btn:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
 }
 
 /* Mission info */
@@ -765,6 +970,41 @@ h1 {
 .detail i {
   color: #64748b;
   min-width: 16px;
+}
+
+/* Message de candidature */
+.application-message {
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 15px;
+  display: flex;
+  gap: 10px;
+}
+
+.application-message i {
+  color: #0ea5e9;
+  font-size: 16px;
+  margin-top: 2px;
+}
+
+.message-content {
+  flex: 1;
+}
+
+.message-content strong {
+  display: block;
+  font-size: 13px;
+  color: #0369a1;
+  margin-bottom: 4px;
+}
+
+.message-content p {
+  margin: 0;
+  font-size: 14px;
+  color: #0c4a6e;
+  line-height: 1.4;
 }
 
 /* Compétences */
@@ -821,6 +1061,12 @@ h1 {
   font-weight: 600;
 }
 
+.client-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .client-name {
   font-size: 16px;
   color: #1e293b;
@@ -828,10 +1074,49 @@ h1 {
   margin: 0;
 }
 
+.client-rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #fffbeb;
+  color: #f59e0b;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Feedback */
+.feedback-section {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 20px;
+}
+
+.feedback-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #dc2626;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.feedback-content {
+  font-size: 14px;
+  color: #991b1b;
+  margin: 0;
+  line-height: 1.4;
+}
+
 /* Actions */
 .card-actions {
   display: flex;
-  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
 }
 
 .btn-details {
@@ -860,6 +1145,26 @@ h1 {
   opacity: 0.7;
 }
 
+.btn-deliverables {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.btn-deliverables:hover {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.3);
+}
+
 /* Statistiques */
 .stats-summary {
   display: flex;
@@ -886,13 +1191,126 @@ h1 {
 .stat-value {
   font-size: 32px;
   font-weight: 700;
+}
+
+.stat-item:nth-child(1) .stat-value {
   color: #3b82f6;
+}
+
+.stat-item:nth-child(2) .stat-value {
+  color: #f59e0b;
+}
+
+.stat-item:nth-child(3) .stat-value {
+  color: #10b981;
+}
+
+.stat-item:nth-child(4) .stat-value {
+  color: #ef4444;
+}
+
+.stat-item:nth-child(5) .stat-value {
+  color: #6b7280;
 }
 
 .stat-label {
   font-size: 14px;
   color: #64748b;
   font-weight: 600;
+}
+
+/* =========================
+   MODAL
+========================= */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 24px 0 24px;
+  margin-bottom: 20px;
+}
+
+.modal-header h3 {
+  font-size: 20px;
+  color: #111827;
+  font-weight: 700;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.modal-body {
+  padding: 0 24px 24px 24px;
+}
+
+.modal-info {
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  padding: 12px 16px;
+  color: #0369a1;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.modal-info strong {
+  color: #1e293b;
 }
 
 /* =========================
@@ -925,6 +1343,33 @@ h1 {
     gap: 10px;
   }
   
+  .action-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .cancel-btn,
+  .create-deliverable-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .client-details {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .card-actions {
+    flex-direction: column;
+  }
+  
+  .btn-details,
+  .btn-deliverables {
+    width: 100%;
+    justify-content: center;
+  }
+  
   .stats-summary {
     flex-direction: column;
     align-items: center;
@@ -949,17 +1394,18 @@ h1 {
     align-items: flex-start;
   }
   
-  .cancel-btn {
-    align-self: flex-start;
-  }
-  
-  .card-actions {
-    justify-content: stretch;
-  }
-  
-  .btn-details {
-    width: 100%;
+  .status-filters {
     justify-content: center;
+  }
+  
+  .status-filter-btn {
+    flex: 1;
+    min-width: 100px;
+    text-align: center;
+  }
+  
+  .modal-content {
+    margin: 0 16px;
   }
 }
 </style>

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
 
-export const useMissionStore = defineStore('missions', {
+export  const useMissionStore = defineStore('missions', {
   state: () => ({
     missions: [],        // toutes les missions (public / recherche)
     myMissions: [],      // missions du client connecté

@@ -265,7 +265,9 @@ const loadData = async () => {
     // 1. Charger les détails de la mission
     await missionsStore.fetchMissionDetails(missionId)
     
+    
     if (!missionsStore.missionDetails) {
+      missionDetails = route.push(`missions/client${missionId}`)
       error.value = 'Mission non trouvée'
       return
     }

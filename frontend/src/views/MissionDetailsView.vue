@@ -262,8 +262,8 @@ async function applyToMission() {
   applying.value = true
   
   try {
-    // Demander un message optionnel
-    const message = prompt('Message optionnel pour le client (laisser vide si aucun) :', '')
+    // // Demander un message optionnel
+    const message = ' '
     
     // Postuler
     await postulationsStore.apply(missionId, message || '')

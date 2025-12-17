@@ -1,3 +1,4 @@
+from datetime import datetime
 from app import db
 from flask_bcrypt import Bcrypt
 import enum
@@ -20,6 +21,17 @@ class PostulationStatus(enum.Enum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
+# ============================
+# ENUM pour le statut du livrable
+# ============================
+
+class DeliverableStatus(enum.Enum):
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    UNDER_REVIEW = "under_review"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    NEEDS_REVISION = "needs_revision"
 
 
 # ============================
@@ -225,3 +237,72 @@ class Postulation(db.Model):
     __table_args__ = (
         db.UniqueConstraint('mission_id', 'freelance_id', name='uq_postulation_mission_freelance'),
     )
+
+
+# ============================
+# DELIVERABLE (Livrable)
+# ============================
+
+class Deliverable(db.Model):
+    __tablename__ = 'deliverables'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # Informations de base
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    
+    # URL du fichier seulement
+    file_url = db.Column(db.String(500), nullable=False)
+    
+    # Dates
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    submitted_at = db.Column(db.DateTime, nullable=True)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    accepted_at = db.Column(db.DateTime, nullable=True)
+    
+    # Statut
+    status = db.Column(db.Enum(DeliverableStatus), default=DeliverableStatus.DRAFT, nullable=False)
+    
+    # Commentaires
+    client_feedback = db.Column(db.Text, nullable=True)
+    
+    # Relations
+    mission_id = db.Column(db.Integer, db.ForeignKey('mission.id'), nullable=False)
+    submitted_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    accepted_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    
+    # Relations SQLAlchemy
+    mission = db.relationship('Mission', backref=db.backref('deliverables', lazy='dynamic'))
+    submitter = db.relationship('User', foreign_keys=[submitted_by], backref='submitted_deliverables')
+    reviewer = db.relationship('User', foreign_keys=[reviewed_by], backref='reviewed_deliverables')
+    accepter = db.relationship('User', foreign_keys=[accepted_by], backref='accepted_deliverables')
+    
+    def submit(self, freelance_user):
+        self.submitted_by = freelance_user.id
+        self.status = DeliverableStatus.SUBMITTED
+        self.submitted_at = datetime.now()
+    
+    def accept(self, client_user):
+        self.status = DeliverableStatus.ACCEPTED
+        self.accepted_by = client_user.id
+        self.accepted_at = datetime.now()
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'description': self.description,
+            'file_url': self.file_url,
+            'status': self.status.value,
+            'client_feedback': self.client_feedback,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'submitted_at': self.submitted_at.isoformat() if self.submitted_at else None,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'accepted_at': self.accepted_at.isoformat() if self.accepted_at else None,
+            'mission_id': self.mission_id,
+            'submitted_by': self.submitted_by,
+            'reviewed_by': self.reviewed_by,
+            'accepted_by': self.accepted_by
+        }
