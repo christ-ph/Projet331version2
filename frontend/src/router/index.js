@@ -170,7 +170,7 @@ const routes = [
     {
     path: '/client/:missionId/deliverables',
     name: 'ManageDeliverablesClient',
-    component: ManageDeliverablesViewClient,
+    component: ManageDeliverablesClientView,
     meta: { 
       requiresAuth: true,
       requiresRole:"CLIENT",
