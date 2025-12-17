@@ -197,7 +197,7 @@
               <button
                 v-else-if="mission.status === 'in_progress'"
                 class="btn-in-progress"
-                @click="goToDetails(mission.id)"
+                @click="goToLivrables(mission.id)"
                 :disabled="actionLoading"
               >
                 <i class="fas fa-tasks"></i> Suivre la mission
@@ -205,7 +205,7 @@
               <button
                 v-else-if="mission.status === 'completed'"
                 class="btn-completed"
-                @click="goToDetails(mission.id)"
+                @click="goToFins(mission.id)"
                 :disabled="actionLoading"
               >
                 <i class="fas fa-check-circle"></i> Voir le résultat
@@ -365,7 +365,9 @@ const filterMissions = () => {
   // La logique de filtrage est gérée par computed filteredMissions
 }
 
-const goToDetails = id => router.push(`/missions/${id}`)
+const goToDetails = id => router.push(`/client/missions/${id}`)
+const goToLivrables = id => router.push(`/client/${id}/deliverables`)
+const goToFins = id => router.push(`/missions/client/${id}/fins`)
 
 const goToApplications = id => router.push(`/missions/${id}/applications`)
 

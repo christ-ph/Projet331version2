@@ -1,4 +1,3 @@
-# app/missions/routes.py - CORRIGÉ
 from flask import Blueprint, request, jsonify, g
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
