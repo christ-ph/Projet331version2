@@ -6,8 +6,14 @@ import { useAuthStore } from '@/stores/auth';
 const form = ref({ email: '', password: '' });
 const errorMessage = ref('');
 const successMessage = ref('');
+const showPassword = ref(false); // ✅ État pour afficher/masquer le mot de passe
 const router = useRouter();
 const authStore = useAuthStore();
+
+// ✅ Toggle visibility du mot de passe
+const togglePasswordVisibility = () => {
+  showPassword.value = !showPassword.value;
+};
 
 const login = async () => {
   errorMessage.value = '';
@@ -26,7 +32,6 @@ const login = async () => {
     }, 300);
 
   } catch (error) {
-    // ✅ Cas spécial : email non vérifié
     if (error.type === 'unverified') {
       router.push({
         path: '/verify-email',
@@ -47,23 +52,40 @@ const login = async () => {
       <h2 class="title">Connexion</h2>
 
       <form @submit.prevent="login" class="login-form">
-        <!-- ✅ Messages -->
         <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
         <p v-if="successMessage" class="alert success">{{ successMessage }}</p>
 
-        <!-- ✅ Email -->
+        <!-- Email -->
         <div class="form-group">
           <label>Email</label>
           <input v-model="form.email" type="email" required placeholder="exemple@mail.com" />
         </div>
 
-        <!-- ✅ Password -->
+        <!-- Password avec toggle -->
         <div class="form-group">
           <label>Mot de passe</label>
-          <input v-model="form.password" type="password" required placeholder="Votre mot de passe" />
+          <div class="password-wrapper">
+            <input 
+              v-model="form.password" 
+              :type="showPassword ? 'text' : 'password'" 
+              required 
+              placeholder="Votre mot de passe" 
+            />
+            <button 
+              type="button" 
+              class="toggle-password" 
+              @click="togglePasswordVisibility"
+              tabindex="-1"
+            >
+              <img 
+                :src="showPassword ? '/icone/eye-close.png' : '/icone/eye-open.png'" 
+                alt="Toggle password"
+              />
+            </button>
+          </div>
         </div>
 
-        <!-- ✅ Submit -->
+        <!-- Submit -->
         <button type="submit" class="btn" :disabled="authStore.isLoading">
           <span v-if="authStore.isLoading">Connexion...</span>
           <span v-else>Se connecter</span>
@@ -79,7 +101,6 @@ const login = async () => {
 </template>
 
 <style scoped>
-/* ✅ Container global */
 .login-container {
   position: absolute;
   top: 0;
@@ -93,7 +114,6 @@ const login = async () => {
   padding: 20px;
 }
 
-/* ✅ Box centrale */
 .login-box {
   background: #ffffff;
   width: 350px;
@@ -103,21 +123,18 @@ const login = async () => {
   text-align: center;
 }
 
-/* ✅ Titre */
 .title {
   margin-bottom: 20px;
   font-size: 24px;
   color: #1f2937;
 }
 
-/* ✅ Formulaire */
 .login-form {
   display: flex;
   flex-direction: column;
   gap: 15px;
 }
 
-/* ✅ Messages */
 .alert {
   padding: 10px;
   border-radius: 6px;
@@ -132,7 +149,6 @@ const login = async () => {
   color: #166534;
 }
 
-/* ✅ Inputs */
 .form-group {
   text-align: left;
 }
@@ -142,22 +158,54 @@ const login = async () => {
   margin-bottom: 5px;
   display: block;
 }
+
+/* ✅ Wrapper pour le champ password + toggle */
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .form-group input {
   width: 100%;
   height: 40px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  padding: 0 10px;
+  padding: 0 40px 0 10px; /* ✅ Padding à droite pour l'icône */
   font-size: 14px;
   transition: 0.2s;
 }
+
 .form-group input:focus {
   border-color: #3b82f6;
   outline: none;
   box-shadow: 0 0 0 2px rgba(59,130,246,0.2);
 }
 
-/* ✅ Bouton */
+/* ✅ Bouton toggle password */
+.toggle-password {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-password img {
+  width: 20px;
+  height: 20px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.toggle-password:hover img {
+  opacity: 1;
+}
+
 .btn {
   background: #3b82f6;
   color: white;
@@ -176,7 +224,6 @@ const login = async () => {
   cursor: not-allowed;
 }
 
-/* ✅ Lien inscription */
 .register-text {
   margin-top: 15px;
   font-size: 14px;
