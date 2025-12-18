@@ -78,7 +78,7 @@ export const useAuthStore = defineStore('auth', {
       this.isLoading = true
       try {
         const res = await axios.post('/auth/login', { email, password })
-
+        console.log("response content :"+res.data)
         this.token = res.data.access_token
         this.user = res.data.user
         this.isAuthenticated = true
@@ -201,6 +201,10 @@ export const useAuthStore = defineStore('auth', {
       } finally {
         this.isLoading = false
       }
+    },
+    updateUser(data){
+      this.user = { ...this.user, ...data }
+      localStorage.setItem('user', JSON.stringify(this.user))
     },
 
     /**

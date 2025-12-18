@@ -26,14 +26,21 @@ const login = async () => {
   if (authStore.isLoading) return;
 
   try {
-    await authStore.login(form.value.email, form.value.password);
+    const result = await authStore.login(form.value.email, form.value.password);
 
+  if(result.success){
     successMessage.value = "Connexion réussie ! Redirection...";
 
     setTimeout(() => {
       router.push('/dashboard');
     }, 1500);
-
+  }
+  else
+   {
+    const msg = result.message || "Erreur de connexion";
+    errorMessage.value = msg;
+    
+   }
   } catch (error) {
     // ✅ Cas spécial : email non vérifié
     if (error.type === 'unverified') {

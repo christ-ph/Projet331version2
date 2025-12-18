@@ -44,7 +44,11 @@ def register():
 
     # Vérifier si l'utilisateur existe déjà
     stmt = select(User).filter_by(email=email)
-    if db.session.execute(stmt).scalars().first():
+    user = db.session.execute(stmt).scalars().first()
+    if user and not user.is_verified and user.reset_token_expiration > datetime.utcnow():
+        db.session.delete(user)
+        db.session.commit()
+    elif user:
         return jsonify({"msg": "L'utilisateur existe déjà."}), 409
 
     # Rôle par défaut
@@ -153,7 +157,7 @@ def resend_code():
 # ============================
 
 @auth_bp.route('/login', methods=['POST'])
-@is_active_required
+
 def login():
     data = request.get_json()
     email = data.get('email')
