@@ -60,8 +60,12 @@ const verify = async () => {
   errorMessage.value = '';
 
   try {
-    await authStore.verifyEmail(form.value.email, otp.value);
-
+    const result = await authStore.verifyEmail( form.value.email, otp.value);
+    if(!result.success){
+      const msg = result.message || "Code invalide";
+    errorMessage.value = msg;
+    return;
+    }
     otpMessage.value = "Email vérifié avec succès ! Redirection...";
 
     setTimeout(() => {

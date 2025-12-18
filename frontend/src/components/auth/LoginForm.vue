@@ -27,7 +27,7 @@ const login = async () => {
 
   try {
     const result = await authStore.login(form.value.email, form.value.password);
-
+    console.log("Login result:", result);
   if(result.success){
     successMessage.value = "Connexion réussie ! Redirection...";
 
