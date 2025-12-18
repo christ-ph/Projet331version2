@@ -31,7 +31,8 @@ const login = async () => {
     successMessage.value = "Connexion réussie ! Redirection...";
 
     setTimeout(() => {
-      router.push('/dashboard');
+      document.location.href = '/dashboard';
+      //router.push('/dashboard');
     }, 1500);
 
   } catch (error) {

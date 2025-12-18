@@ -35,6 +35,7 @@ def send_verification_email(email, code):
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
+    print(data)
     email = data.get('email')
     password = data.get('password')
 
@@ -42,9 +43,14 @@ def register():
         return jsonify({"msg": "Email et mot de passe requis."}), 400
 
     # Vérifier si l'utilisateur existe déjà
-    stmt = select(User).filter_by(email=email)
-    if db.session.execute(stmt).scalars().first():
-        return jsonify({"msg": "L'utilisateur existe déjà."}), 409
+    user = db.session.execute(select(User).filter_by(email=email)).scalars().first()
+    if user:
+        if user.reset_token_expiration and user.reset_token_expiration < datetime.utcnow() and not user.is_verified:
+            # Supprimer l'utilisateur non vérifié expiré
+            db.session.delete(user)
+            db.session.commit()
+        else:
+            return jsonify({"msg": "L'utilisateur existe déjà."}), 409
 
     # Rôle par défaut
     default_role = db.session.execute(select(Role).filter_by(name='USER')).scalars().first()
@@ -167,6 +173,11 @@ def login():
         return jsonify({"msg": "Email ou mot de passe invalide."}), 401
 
     if not user.is_verified:
+        if user.reset_token_expiration < datetime.utcnow():
+            # Supprimer l'utilisateur non vérifié expiré
+            db.session.delete(user)
+            db.session.commit()
+            return jsonify({"msg": "Votre compte a été supprimé. Veuillez vous réinscrire."}), 410
         return jsonify({"msg": "Veuillez vérifier votre email avant de vous connecter."}), 403
 
     access_token = create_access_token(identity=str(user.id))
