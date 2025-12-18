@@ -25,6 +25,7 @@ import ClientMissionDetailView from '@/views/ClientMissionDetailView.vue';
 import ManageApplicationsView from '@/views/ManageApplicationsView.vue';
 import ProfilesClient from '@/views/ProfilesClient.vue';
 import ManageDeliverablesClientView from '@/views/ManageDeliverablesClientView.vue';
+import MissionFinView from '@/views/MissionFinView.vue';
 
 // Store Auth pour le guard
 import { useAuthStore } from '@/stores/auth';
@@ -171,6 +172,16 @@ const routes = [
     path: '/client/:missionId/deliverables', 
     name: 'ManageDeliverablesClient',
     component: ManageDeliverablesClientView,
+    meta: { 
+      requiresAuth: true,
+      requiresRole:"CLIENT",
+      title: 'Gestion des livrables client'
+    }
+  },
+      {
+    path: '/missions/client/:missionId/fins', 
+    name: 'MissionFinView',
+    component: MissionFinView,
     meta: { 
       requiresAuth: true,
       requiresRole:"CLIENT",

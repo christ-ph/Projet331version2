@@ -1,11 +1,11 @@
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, Response, request, jsonify, g, current_app as app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 from sqlalchemy import or_, and_
 import json
 
 from app import db
-from app.models import Mission, Postulation, MissionStatus, PostulationStatus, User, Profile
+from app.models import Deliverable, DeliverableStatus, FreelanceProfile, Mission, Postulation, MissionStatus, PostulationStatus, User, Profile
 from app.utils import role_required
 
 # Création du blueprint avec le nom spécifique
@@ -86,20 +86,24 @@ def get_missions():
             except ValueError:
                 pass
         
-        # Filtrage par compétences (CORRECTION: utilisation correcte de JSON array)
+        # Filtrage par compétences
         skills = request.args.get('skills')
-        if skills and hasattr(Mission, 'required_skills'):
-            skills_list = [s.strip() for s in skills.split(',')]
-            # Pour PostgreSQL avec JSONB, utiliser @> (contains)
-            from sqlalchemy import text
-            query = query.filter(Mission.required_skills.contains(skills_list))
+        if skills:
+            try:
+                skills_list = json.loads(skills) if skills.startswith('[') else [s.strip() for s in skills.split(',')]
+                if hasattr(Mission, 'required_skills') and skills_list:
+                    # Pour PostgreSQL avec JSONB
+                    from sqlalchemy import text
+                    query = query.filter(Mission.required_skills.contains(skills_list))
+            except:
+                pass
         
         missions = query.order_by(Mission.created_at.desc()).all()
         
         return jsonify([mission_to_dict(mission) for mission in missions]), 200
     
     except Exception as e:
-        print(f"❌ ERROR get_missions: {str(e)}")
+        app.logger.error(f"❌ ERROR get_missions: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/<int:mission_id>', methods=['GET'])
@@ -109,7 +113,7 @@ def get_mission(mission_id):
         mission = Mission.query.get_or_404(mission_id)
         return jsonify(mission_to_dict(mission)), 200
     except Exception as e:
-        print(f"❌ ERROR get_mission: {str(e)}")
+        app.logger.error(f"❌ ERROR get_mission: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('', methods=['POST'])
@@ -162,10 +166,13 @@ def create_mission():
             except (ValueError, TypeError):
                 return jsonify({'error': 'Format de date invalide'}), 400
         
-        # Compétences requises (OPTIONNEL)
+        # Compétences requises
         if 'required_skills' in data:
             if data['required_skills'] is None or isinstance(data['required_skills'], list):
                 mission.required_skills = data['required_skills']
+            elif isinstance(data['required_skills'], str):
+                # Convertir la string en liste
+                mission.required_skills = [s.strip() for s in data['required_skills'].split(',')]
             else:
                 return jsonify({'error': 'required_skills doit être une liste'}), 400
         
@@ -176,7 +183,7 @@ def create_mission():
     
     except Exception as e:
         db.session.rollback()
-        print(f"❌ ERROR create_mission: {str(e)}")
+        app.logger.error(f"❌ ERROR create_mission: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/<int:mission_id>', methods=['PUT'])
@@ -221,6 +228,8 @@ def update_mission(mission_id):
         if 'required_skills' in data:
             if data['required_skills'] is None or isinstance(data['required_skills'], list):
                 mission.required_skills = data['required_skills']
+            elif isinstance(data['required_skills'], str):
+                mission.required_skills = [s.strip() for s in data['required_skills'].split(',')]
             else:
                 return jsonify({'error': 'required_skills doit être une liste ou null'}), 400
         
@@ -236,7 +245,7 @@ def update_mission(mission_id):
     
     except Exception as e:
         db.session.rollback()
-        print(f"❌ ERROR update_mission: {str(e)}")
+        app.logger.error(f"❌ ERROR update_mission: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/<int:mission_id>', methods=['DELETE'])
@@ -276,7 +285,7 @@ def delete_mission(mission_id):
     
     except Exception as e:
         db.session.rollback()
-        print(f"❌ ERROR delete_mission: {str(e)}")
+        app.logger.error(f"❌ ERROR delete_mission: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # ============================
@@ -306,7 +315,7 @@ def get_my_missions():
         return jsonify([mission_to_dict(mission) for mission in missions]), 200
     
     except Exception as e:
-        print(f"❌ ERROR get_my_missions: {str(e)}")
+        app.logger.error(f"❌ ERROR get_my_missions: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/available', methods=['GET'])
@@ -342,19 +351,22 @@ def get_available_missions():
             except ValueError:
                 pass
         
-        # Filtrage par compétences (si supported)
+        # Filtrage par compétences
         skills = request.args.get('skills')
-        if skills and hasattr(Mission, 'required_skills'):
-            skills_list = [s.strip() for s in skills.split(',')]
-            # Utiliser .contains() pour PostgreSQL JSONB
-            query = query.filter(Mission.required_skills.contains(skills_list))
+        if skills:
+            try:
+                skills_list = json.loads(skills) if skills.startswith('[') else [s.strip() for s in skills.split(',')]
+                if hasattr(Mission, 'required_skills') and skills_list:
+                    query = query.filter(Mission.required_skills.contains(skills_list))
+            except:
+                pass
         
         missions = query.order_by(Mission.created_at.desc()).all()
         
         return jsonify([mission_to_dict(mission) for mission in missions]), 200
     
     except Exception as e:
-        print(f"❌ ERROR get_available_missions: {str(e)}")
+        app.logger.error(f"❌ ERROR get_available_missions: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/<int:mission_id>/publish', methods=['POST'])
@@ -389,7 +401,7 @@ def publish_mission(mission_id):
     
     except Exception as e:
         db.session.rollback()
-        print(f"❌ ERROR publish_mission: {str(e)}")
+        app.logger.error(f"❌ ERROR publish_mission: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/<int:mission_id>/status', methods=['PATCH'])
@@ -451,7 +463,7 @@ def change_mission_status(mission_id):
     
     except Exception as e:
         db.session.rollback()
-        print(f"❌ ERROR change_mission_status: {str(e)}")
+        app.logger.error(f"❌ ERROR change_mission_status: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/<int:mission_id>/postulations', methods=['GET'])
@@ -475,21 +487,21 @@ def get_mission_postulations(mission_id):
         for postulation in postulations:
             freelance = User.query.get(postulation.freelance_id)
             
-            # Récupérer le profil via la relation (si elle existe)
+            # Récupérer le profil
             freelance_profile = None
             if freelance:
-                # Essayer différentes méthodes d'accès au profil
-                if hasattr(freelance, 'profile') and freelance.profile:
+                if hasattr(freelance, 'freelance_profile'):
+                    freelance_profile = freelance.freelance_profile
+                elif hasattr(freelance, 'profile'):
                     freelance_profile = freelance.profile
-                elif hasattr(freelance, 'get_profile'):
-                    freelance_profile = freelance.get_profile()
             
             postulations_data.append({
                 'id': postulation.id,
+                'postulation_id': postulation.id,  # Ajouté pour compatibilité avec Pinia
                 'freelance_id': postulation.freelance_id,
                 'freelance_name': freelance_profile.full_name if freelance_profile and hasattr(freelance_profile, 'full_name') else 'Inconnu',
                 'status': postulation.status.value,
-                'created_at': postulation.created_at.isoformat(),
+                'created_at': postulation.created_at.isoformat() if postulation.created_at else None,
                 'profile_title': freelance_profile.title if freelance_profile and hasattr(freelance_profile, 'title') else None,
                 'rating': freelance_profile.rating if freelance_profile and hasattr(freelance_profile, 'rating') else 0,
                 'completed_projects': freelance_profile.completed_projects if freelance_profile and hasattr(freelance_profile, 'completed_projects') else 0
@@ -498,7 +510,7 @@ def get_mission_postulations(mission_id):
         return jsonify(postulations_data), 200
     
     except Exception as e:
-        print(f"❌ ERROR get_mission_postulations: {str(e)}")
+        app.logger.error(f"❌ ERROR get_mission_postulations: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/<int:mission_id>/apply', methods=['POST'])
@@ -542,7 +554,7 @@ def apply_to_mission(mission_id):
     
     except Exception as e:
         db.session.rollback()
-        print(f"❌ ERROR apply_to_mission: {str(e)}")
+        app.logger.error(f"❌ ERROR apply_to_mission: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/search', methods=['GET'])
@@ -590,9 +602,13 @@ def search_missions():
         
         # Filtre par compétences
         skills = request.args.get('skills')
-        if skills and hasattr(Mission, 'required_skills'):
-            skills_list = [s.strip() for s in skills.split(',')]
-            query = query.filter(Mission.required_skills.contains(skills_list))
+        if skills:
+            try:
+                skills_list = json.loads(skills) if skills.startswith('[') else [s.strip() for s in skills.split(',')]
+                if hasattr(Mission, 'required_skills') and skills_list:
+                    query = query.filter(Mission.required_skills.contains(skills_list))
+            except:
+                pass
         
         # Tri
         sort_by = request.args.get('sort_by', 'created_at')
@@ -631,7 +647,7 @@ def search_missions():
         }), 200
     
     except Exception as e:
-        print(f"❌ ERROR search_missions: {str(e)}")
+        app.logger.error(f"❌ ERROR search_missions: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/my-applications', methods=['GET'])
@@ -658,10 +674,10 @@ def get_my_applications():
             if not mission:
                 continue  # Skip si la mission n'existe plus
                 
-            # Format de réponse
+            # Format de réponse compatible avec Pinia
             application = {
                 'id': postulation.id,
-                'postulation_id': postulation.id,
+                'postulation_id': postulation.id,  # Alias pour compatibilité
                 'status': postulation.status.value,
                 'created_at': postulation.created_at.isoformat() if postulation.created_at else None,
                 'mission_id': mission.id,
@@ -683,7 +699,6 @@ def get_my_applications():
                 application['client'] = {
                     'id': client.id,
                     'email': client.email
-                    # Ajouter d'autres infos si disponibles
                 }
             
             applications_data.append(application)
@@ -691,11 +706,11 @@ def get_my_applications():
         return jsonify(applications_data), 200
     
     except Exception as e:
-        print(f"❌ ERROR get_my_applications: {str(e)}")
+        app.logger.error(f"❌ ERROR get_my_applications: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # ============================
-# ROUTES ESSENTIELLES - GESTION CANDIDATURES
+# NOUVELLES ROUTES COMPATIBLES AVEC PINIA STORE
 # ============================
 
 @missions_bp.route('/<int:mission_id>/applications/<int:application_id>/status', methods=['PUT'])
@@ -756,6 +771,7 @@ def update_application_status(mission_id, application_id):
             
             # Mettre la mission en IN_PROGRESS
             mission.status = MissionStatus.IN_PROGRESS
+            mission.updated_at = datetime.utcnow()
         
         # Mettre à jour la candidature
         application.status = status_enum
@@ -769,7 +785,7 @@ def update_application_status(mission_id, application_id):
     
     except Exception as e:
         db.session.rollback()
-        print(f"❌ ERROR update_application_status: {str(e)}")
+        app.logger.error(f"❌ ERROR update_application_status: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/<int:mission_id>/complete', methods=['PUT'])
@@ -777,7 +793,7 @@ def update_application_status(mission_id, application_id):
 @role_required(['CLIENT'])
 def complete_mission(mission_id):
     """
-    Marquer une mission comme complétée
+    Marquer une mission comme complétée et évaluer le freelance
     """
     try:
         current_user_id = get_current_user_id()
@@ -802,19 +818,83 @@ def complete_mission(mission_id):
         if not accepted_application:
             return jsonify({'error': 'Aucun freelance accepté pour cette mission'}), 400
         
-        # Marquer comme complétée
+        # Récupérer les données de la requête
+        data = request.get_json() or {}
+        
+        # Validation des données optionnelles
+        feedback = data.get('feedback', '').strip()
+        rating = data.get('rating')
+        
+        if rating is not None:
+            if not isinstance(rating, (int, float)) or rating < 0 or rating > 5:
+                return jsonify({'error': 'La note doit être un nombre entre 0 et 5'}), 400
+        
+        # Récupérer le profil du freelance
+        freelance_user = accepted_application.freelance
+        freelance_profile = FreelanceProfile.query.filter_by(user_id=freelance_user.id).first()
+        
+        if not freelance_profile:
+            return jsonify({'error': 'Profil freelance non trouvé'}), 404
+        
+        # Mettre à jour les statistiques du freelance si une note est fournie
+        if rating is not None:
+            # Calculer la nouvelle note moyenne
+            if freelance_profile.completed_projects > 0:
+                # Calculer la nouvelle moyenne
+                total_rating = freelance_profile.rating * freelance_profile.completed_projects
+                total_rating += rating
+                freelance_profile.completed_projects += 1
+                freelance_profile.rating = total_rating / freelance_profile.completed_projects
+            else:
+                # Premier projet
+                freelance_profile.completed_projects = 1
+                freelance_profile.rating = rating
+        else:
+            # Pas de note, mais on incrémente quand même le nombre de projets
+            freelance_profile.completed_projects += 1
+        
+        # Stocker le feedback dans le champ description (optionnel)
+        if feedback:
+            # Ajouter le feedback à la description existante (limité)
+            current_desc = freelance_profile.description or ""
+            feedback_entry = f"\n\n[Feedback Mission #{mission_id}]: {feedback}"
+            new_desc = current_desc + feedback_entry
+            
+            # Limiter à 500 caractères
+            if len(new_desc) > 500:
+                # Conserver les derniers 500 caractères
+                new_desc = new_desc[-500:]
+            
+            freelance_profile.description = new_desc
+        
+        # Mettre à jour la mission
         mission.status = MissionStatus.COMPLETED
+        mission.updated_at = datetime.utcnow()
+        
+        # Stocker l'évaluation dans la postulation pour référence
+        if rating is not None:
+            accepted_application.client_rating = rating
+        if feedback:
+            accepted_application.client_feedback = feedback
+        
         db.session.commit()
         
         return jsonify({
-            'message': 'Mission marquée comme complétée',
+            'message': 'Mission marquée comme complétée avec succès',
             'mission_id': mission.id,
-            'status': mission.status.value
+            'status': mission.status.value,
+            'freelance_updated': {
+                'id': freelance_user.id,
+                'new_rating': freelance_profile.rating,
+                'completed_projects': freelance_profile.completed_projects
+            },
+            'feedback_added': bool(feedback),
+            'rating_added': rating if rating is not None else None
         }), 200
     
     except Exception as e:
         db.session.rollback()
-        print(f"❌ ERROR complete_mission: {str(e)}")
+        app.logger.error(f"❌ ERROR complete_mission: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @missions_bp.route('/<int:mission_id>/cancel', methods=['PUT'])
@@ -843,6 +923,7 @@ def cancel_mission(mission_id):
         
         # Annuler la mission
         mission.status = MissionStatus.CANCELLED
+        mission.updated_at = datetime.utcnow()
         db.session.commit()
         
         return jsonify({
@@ -853,5 +934,513 @@ def cancel_mission(mission_id):
     
     except Exception as e:
         db.session.rollback()
-        print(f"❌ ERROR cancel_mission: {str(e)}")
+        app.logger.error(f"❌ ERROR cancel_mission: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+# ============================
+# ROUTES AJOUTÉES POUR PINIA STORE
+# ============================
+
+@missions_bp.route('/<int:mission_id>/completion', methods=['GET'])
+@jwt_required()
+@role_required(['CLIENT'])
+def get_mission_completion_details(mission_id):
+    """Récupérer les détails d'une mission complétée"""
+    try:
+        current_user_id = get_current_user_id()
+        
+        # Vérifier la mission
+        mission = Mission.query.get_or_404(mission_id)
+        if mission.client_id != current_user_id:
+            return jsonify({'error': 'Accès non autorisé'}), 403
+        
+        # Vérifier que la mission est complétée
+        if mission.status != MissionStatus.COMPLETED:
+            return jsonify({'error': 'Cette mission n\'est pas encore complétée'}), 400
+        
+        # Récupérer la candidature acceptée
+        accepted_application = Postulation.query.filter(
+            and_(
+                Postulation.mission_id == mission_id,
+                Postulation.status == PostulationStatus.ACCEPTED
+            )
+        ).first()
+        
+        freelance_data = {}
+        if accepted_application and accepted_application.freelance:
+            freelance_profile = FreelanceProfile.query.filter_by(
+                user_id=accepted_application.freelance_id
+            ).first()
+            if freelance_profile:
+                freelance_data = {
+                    'id': freelance_profile.user_id,
+                    'full_name': freelance_profile.full_name,
+                    'title': freelance_profile.title,
+                    'rating': freelance_profile.rating,
+                    'completed_projects': freelance_profile.completed_projects,
+                    'description': freelance_profile.description
+                }
+        
+        # Récupérer les livrables acceptés
+        deliverables = Deliverable.query.filter(
+            Deliverable.mission_id == mission_id,
+            Deliverable.status == DeliverableStatus.ACCEPTED
+        ).all() if hasattr(Deliverable, 'mission_id') else []
+        
+        # Calculer la durée
+        duration = 0
+        if mission.created_at and mission.updated_at:
+            delta = mission.updated_at - mission.created_at
+            duration = delta.days
+        
+        # Récupérer l'évaluation si elle existe
+        rating = accepted_application.client_rating if accepted_application and hasattr(accepted_application, 'client_rating') else None
+        feedback = accepted_application.client_feedback if accepted_application and hasattr(accepted_application, 'client_feedback') else None
+        
+        return jsonify({
+            'mission': {
+                'id': mission.id,
+                'title': mission.title,
+                'description': mission.description,
+                'budget': mission.budget,
+                'status': mission.status.value,
+                'created_at': mission.created_at.isoformat() if mission.created_at else None,
+                'completed_at': mission.updated_at.isoformat() if mission.updated_at else None,
+                'duration': duration,
+                'rating': rating,
+                'feedback': feedback,
+                'deadline': mission.deadline.isoformat() if mission.deadline else None,
+                'required_skills': mission.required_skills or []
+            },
+            'freelance': freelance_data,
+            'deliverables': [{
+                'id': d.id,
+                'title': d.title,
+                'description': d.description,
+                'file_url': d.file_url,
+                'accepted_at': d.accepted_at.isoformat() if hasattr(d, 'accepted_at') and d.accepted_at else None,
+                'created_at': d.created_at.isoformat() if d.created_at else None
+            } for d in deliverables]
+        }), 200
+        
+    except Exception as e:
+        app.logger.error(f"❌ ERROR get_mission_completion_details: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@missions_bp.route('/stats', methods=['GET'])
+@jwt_required()
+def get_mission_stats():
+    """Récupérer les statistiques des missions d'un client"""
+    try:
+        current_user_id = get_current_user_id()
+        
+        missions = Mission.query.filter_by(client_id=current_user_id).all()
+        
+        # Compter les candidatures totales
+        total_applications = 0
+        for mission in missions:
+            total_applications += mission.postulations.count() if hasattr(mission, 'postulations') else 0
+        
+        stats = {
+            'total': len(missions),
+            'draft': len([m for m in missions if m.status == MissionStatus.DRAFT]),
+            'open': len([m for m in missions if m.status == MissionStatus.OPEN]),
+            'in_progress': len([m for m in missions if m.status == MissionStatus.IN_PROGRESS]),
+            'completed': len([m for m in missions if m.status == MissionStatus.COMPLETED]),
+            'cancelled': len([m for m in missions if m.status == MissionStatus.CANCELLED]),
+            'total_budget': sum(m.budget or 0 for m in missions),
+            'average_budget': sum(m.budget or 0 for m in missions) / len(missions) if missions else 0,
+            'total_applications': total_applications
+        }
+        
+        return jsonify(stats), 200
+        
+    except Exception as e:
+        app.logger.error(f"❌ ERROR get_mission_stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# ============================
+# ROUTES D'EXPORT
+# ============================
+
+@missions_bp.route('/export', methods=['GET'])
+@jwt_required()
+@role_required(['CLIENT'])
+def export_missions():
+    """Exporter les missions au format CSV, Excel ou PDF"""
+    try:
+        current_user_id = get_current_user_id()
+        format_type = request.args.get('format', 'csv').lower()
+        mission_id = request.args.get('mission_id')
+        
+        # Base query
+        query = Mission.query.filter_by(client_id=current_user_id)
+        
+        # Filtrer par mission spécifique si fourni
+        if mission_id:
+            query = query.filter_by(id=mission_id)
+            if query.first() is None:
+                return jsonify({'error': 'Mission non trouvée ou non autorisée'}), 404
+        
+        missions = query.order_by(Mission.created_at.desc()).all()
+        
+        if not missions:
+            return jsonify({'error': 'Aucune mission à exporter'}), 404
+        
+        if format_type == 'csv':
+            return export_to_csv(missions)
+        elif format_type == 'excel':
+            return export_to_excel(missions)
+        elif format_type == 'pdf':
+            return export_to_pdf(missions)
+        else:
+            return jsonify({'error': 'Format non supporté. Utilisez csv, excel ou pdf'}), 400
+        
+    except Exception as e:
+        app.logger.error(f"Erreur export missions: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+def export_to_csv(missions):
+    """Exporter les missions en CSV"""
+    import csv
+    import io
+    
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_ALL)
+    
+    # En-têtes
+    writer.writerow([
+        'ID', 'Titre', 'Description', 'Statut', 'Budget (€)', 
+        'Date création', 'Deadline', 'Compétences requises',
+        'Client ID', 'Candidatures totales', 'Candidatures en attente'
+    ])
+    
+    # Données
+    for mission in missions:
+        # Compétences formatées
+        skills = ', '.join(mission.required_skills) if mission.required_skills else ''
+        
+        writer.writerow([
+            mission.id,
+            mission.title or '',
+            (mission.description or '')[:500],
+            mission.status.value,
+            f"{mission.budget:.2f}" if mission.budget else '0.00',
+            mission.created_at.strftime('%d/%m/%Y %H:%M') if mission.created_at else '',
+            mission.deadline.strftime('%d/%m/%Y') if mission.deadline else '',
+            skills,
+            mission.client_id,
+            mission.postulations.count() if hasattr(mission, 'postulations') else 0,
+            len([p for p in mission.postulations.all() if p.status == PostulationStatus.PENDING]) if hasattr(mission, 'postulations') else 0
+        ])
+    
+    # Convertir en bytes pour le téléchargement
+    csv_bytes = output.getvalue().encode('utf-8-sig')  # BOM pour Excel
+    
+    return Response(
+        csv_bytes,
+        mimetype='text/csv; charset=utf-8-sig',
+        headers={'Content-Disposition': f'attachment; filename="missions_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'}
+    )
+
+
+def export_to_excel(missions):
+    """Exporter les missions en Excel"""
+    try:
+        import pandas as pd
+        from io import BytesIO
+        
+        # Préparer les données
+        data = []
+        for mission in missions:
+            # Compétences formatées
+            skills = ', '.join(mission.required_skills) if mission.required_skills else ''
+            
+            data.append({
+                'ID': mission.id,
+                'Titre': mission.title or '',
+                'Description': mission.description or '',
+                'Statut': mission.status.value,
+                'Budget (€)': float(mission.budget) if mission.budget else 0.0,
+                'Date création': mission.created_at.strftime('%d/%m/%Y %H:%M') if mission.created_at else '',
+                'Deadline': mission.deadline.strftime('%d/%m/%Y') if mission.deadline else '',
+                'Compétences requises': skills,
+                'Client ID': mission.client_id,
+                'Candidatures totales': mission.postulations.count() if hasattr(mission, 'postulations') else 0,
+                'Candidatures en attente': len([p for p in mission.postulations.all() if p.status == PostulationStatus.PENDING]) if hasattr(mission, 'postulations') else 0
+            })
+        
+        # Créer un DataFrame pandas
+        df = pd.DataFrame(data)
+        
+        # Créer un writer Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Onglet principal
+            df.to_excel(writer, sheet_name='Missions', index=False)
+            
+            # Onglet statistiques
+            stats_data = {
+                'Statistique': [
+                    'Total missions',
+                    'Budget total',
+                    'Budget moyen',
+                    'Missions en brouillon',
+                    'Missions publiées',
+                    'Missions en cours',
+                    'Missions terminées',
+                    'Missions annulées',
+                    'Candidatures totales'
+                ],
+                'Valeur': [
+                    len(missions),
+                    f"{sum(m.budget or 0 for m in missions):.2f} €",
+                    f"{(sum(m.budget or 0 for m in missions) / len(missions)) if missions else 0:.2f} €",
+                    len([m for m in missions if m.status == MissionStatus.DRAFT]),
+                    len([m for m in missions if m.status == MissionStatus.OPEN]),
+                    len([m for m in missions if m.status == MissionStatus.IN_PROGRESS]),
+                    len([m for m in missions if m.status == MissionStatus.COMPLETED]),
+                    len([m for m in missions if m.status == MissionStatus.CANCELLED]),
+                    sum(m.postulations.count() if hasattr(m, 'postulations') else 0 for m in missions)
+                ]
+            }
+            stats_df = pd.DataFrame(stats_data)
+            stats_df.to_excel(writer, sheet_name='Statistiques', index=False)
+            
+            # Ajuster la largeur des colonnes
+            for sheet in writer.sheets:
+                worksheet = writer.sheets[sheet]
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        output.seek(0)
+        
+        return Response(
+            output.read(),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment; filename="missions_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx"'}
+        )
+        
+    except ImportError:
+        return jsonify({'error': 'Bibliothèque pandas ou openpyxl manquante. Installez avec: pip install pandas openpyxl'}), 500
+    except Exception as e:
+        app.logger.error(f"Erreur export Excel: {str(e)}")
+        return jsonify({'error': f'Erreur lors de la génération Excel: {str(e)}'}), 500
+
+
+def export_to_pdf(missions):
+    """Exporter les missions en PDF"""
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter, A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER
+        import io
+        
+        # Créer le buffer pour le PDF
+        buffer = io.BytesIO()
+        
+        # Créer le document PDF
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=72,
+            leftMargin=72,
+            topMargin=72,
+            bottomMargin=72
+        )
+        
+        # Styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            spaceAfter=30,
+            alignment=TA_CENTER
+        )
+        
+        # Contenu du PDF
+        story = []
+        
+        # Titre
+        story.append(Paragraph("Rapport des Missions", title_style))
+        story.append(Paragraph(f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", styles['Normal']))
+        story.append(Spacer(1, 20))
+        
+        # Statistiques
+        stats_data = [
+            ['Statistiques Générales', ''],
+            ['Total des missions', str(len(missions))],
+            ['Budget total', f"{sum(m.budget or 0 for m in missions):.2f} €"],
+            ['Budget moyen', f"{(sum(m.budget or 0 for m in missions) / len(missions)) if missions else 0:.2f} €"],
+            ['Missions en brouillon', str(len([m for m in missions if m.status == MissionStatus.DRAFT]))],
+            ['Missions publiées', str(len([m for m in missions if m.status == MissionStatus.OPEN]))],
+            ['Missions en cours', str(len([m for m in missions if m.status == MissionStatus.IN_PROGRESS]))],
+            ['Missions terminées', str(len([m for m in missions if m.status == MissionStatus.COMPLETED]))],
+            ['Missions annulées', str(len([m for m in missions if m.status == MissionStatus.CANCELLED]))]
+        ]
+        
+        stats_table = Table(stats_data, colWidths=[200, 100])
+        stats_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(stats_table)
+        story.append(Spacer(1, 30))
+        
+        # Tableau détaillé des missions
+        if missions:
+            # En-têtes
+            table_data = [['ID', 'Titre', 'Statut', 'Budget', 'Date création', 'Deadline', 'Candidatures']]
+            
+            # Données
+            for mission in missions:
+                # Titre tronqué
+                title = mission.title or ''
+                if len(title) > 20:
+                    title = title[:20] + '...'
+                
+                table_data.append([
+                    str(mission.id),
+                    title,
+                    str(mission.status.value).replace('_', ' ').title(),
+                    f"{mission.budget:.0f}€" if mission.budget else '0€',
+                    mission.created_at.strftime('%d/%m/%y') if mission.created_at else '',
+                    mission.deadline.strftime('%d/%m/%y') if mission.deadline else '',
+                    str(mission.postulations.count() if hasattr(mission, 'postulations') else 0)
+                ])
+            
+            # Créer le tableau
+            table = Table(table_data, repeatRows=1)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')])
+            ]))
+            
+            # Ajuster la largeur des colonnes
+            col_widths = [30, 80, 50, 40, 50, 50, 50]
+            table._argW = col_widths
+            
+            story.append(table)
+        
+        # Générer le PDF
+        doc.build(story)
+        buffer.seek(0)
+        
+        return Response(
+            buffer.read(),
+            mimetype='application/pdf',
+            headers={'Content-Disposition': f'attachment; filename="missions_report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf"'}
+        )
+        
+    except ImportError:
+        return jsonify({'error': 'Bibliothèque reportlab manquante. Installez avec: pip install reportlab'}), 500
+    except Exception as e:
+        app.logger.error(f"Erreur export PDF: {str(e)}")
+        return jsonify({'error': f'Erreur lors de la génération PDF: {str(e)}'}), 500
+
+
+# Route spécifique pour l'export d'une mission unique
+@missions_bp.route('/<int:mission_id>/export', methods=['GET'])
+@jwt_required()
+@role_required(['CLIENT'])
+def export_single_mission(mission_id):
+    """Exporter une mission spécifique"""
+    try:
+        current_user_id = get_current_user_id()
+        format_type = request.args.get('format', 'pdf').lower()
+        
+        mission = Mission.query.filter_by(id=mission_id, client_id=current_user_id).first()
+        if not mission:
+            return jsonify({'error': 'Mission non trouvée ou non autorisée'}), 404
+        
+        # Rediriger vers la fonction principale avec l'ID de mission
+        request.args = request.args.copy()
+        request.args['mission_id'] = mission_id
+        return export_missions()
+        
+    except Exception as e:
+        app.logger.error(f"Erreur export mission {mission_id}: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# ============================
+# NOUVELLES ROUTES POUR COMPATIBILITÉ PINIA
+# ============================
+
+@missions_bp.route('/<int:mission_id>/applications/accepted', methods=['GET'])
+@jwt_required()
+def get_accepted_freelance(mission_id):
+    """Récupérer le freelance accepté pour une mission"""
+    try:
+        mission = Mission.query.get_or_404(mission_id)
+        current_user_id = get_current_user_id()
+        
+        # Vérifier les permissions (client ou freelance concerné)
+        if mission.client_id != current_user_id:
+            # Vérifier si c'est le freelance assigné
+            accepted_postulation = Postulation.query.filter_by(
+                mission_id=mission_id,
+                status=PostulationStatus.ACCEPTED
+            ).first()
+            
+            if not accepted_postulation or accepted_postulation.freelance_id != current_user_id:
+                return jsonify({'error': 'Accès non autorisé'}), 403
+        
+        # Récupérer la postulation acceptée
+        accepted_postulation = Postulation.query.filter_by(
+            mission_id=mission_id,
+            status=PostulationStatus.ACCEPTED
+        ).first()
+        
+        if not accepted_postulation:
+            return jsonify({'error': 'Aucun freelance accepté pour cette mission'}), 404
+        
+        freelance = User.query.get(accepted_postulation.freelance_id)
+        freelance_profile = FreelanceProfile.query.filter_by(user_id=freelance.id).first()
+        
+        freelance_data = {
+            'id': freelance.id,
+            'email': freelance.email,
+            'full_name': freelance_profile.full_name if freelance_profile else 'Inconnu',
+            'title': freelance_profile.title if freelance_profile else '',
+            'rating': freelance_profile.rating if freelance_profile else 0,
+            'completed_projects': freelance_profile.completed_projects if freelance_profile else 0,
+            'description': freelance_profile.description if freelance_profile else ''
+        }
+        
+        return jsonify({
+            'freelance': freelance_data,
+            'postulation_id': accepted_postulation.id,
+            'accepted_at': accepted_postulation.created_at.isoformat() if accepted_postulation.created_at else None
+        }), 200
+        
+    except Exception as e:
+        app.logger.error(f"❌ ERROR get_accepted_freelance: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+

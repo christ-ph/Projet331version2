@@ -233,7 +233,7 @@
               <button 
                 v-if="mission.status === 'in_progress'"
                 class="btn-complete-action"
-                @click="completeMission(mission.id)"
+                @click="openCompleteModal(mission)"
                 :disabled="actionLoading"
               >
                 <i class="fas fa-check-circle"></i> Terminer
@@ -265,6 +265,131 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal de notation pour la complétion -->
+    <div v-if="showCompleteModal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Finaliser la mission</h2>
+          <button class="modal-close" @click="closeCompleteModal">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <!-- Informations de la mission -->
+          <div class="mission-summary">
+            <h3>Mission #{{ currentMissionForCompletion?.id }}: {{ currentMissionForCompletion?.title }}</h3>
+            <p class="mission-desc">{{ currentMissionForCompletion?.description }}</p>
+          </div>
+
+          <!-- Freelance info -->
+          <div class="freelance-info" v-if="acceptedFreelance">
+            <h4>Freelance à évaluer :</h4>
+            <div class="freelance-card">
+              <div class="freelance-avatar">
+                {{ freelanceInitials }}
+              </div>
+              <div class="freelance-details">
+                <h5>{{ acceptedFreelance.full_name }}</h5>
+                <p>{{ acceptedFreelance.title || 'Freelance' }}</p>
+                <div class="freelance-rating">
+                  <div class="stars">
+                    <span v-for="i in 5" :key="i" class="star">
+                      {{ i <= acceptedFreelance.rating ? '★' : '☆' }}
+                    </span>
+                  </div>
+                  <span class="rating-text">
+                    {{ acceptedFreelance.rating?.toFixed(1) || '0.0' }} ({{ acceptedFreelance.completed_projects || 0 }} projets)
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Évaluation -->
+          <div class="evaluation-section">
+            <h4>Évaluation du freelance</h4>
+            <p class="modal-subtitle">Donnez une note et un commentaire pour ce freelance (optionnel)</p>
+            
+            <!-- Note -->
+            <div class="rating-input">
+              <label>Note :</label>
+              <div class="star-rating">
+                <button
+                  v-for="star in 5"
+                  :key="star"
+                  type="button"
+                  @click="ratingValue = star"
+                  :class="['star-btn', star <= ratingValue ? 'selected' : '']"
+                >
+                  ★
+                </button>
+                <span class="rating-display">{{ ratingValue }}/5</span>
+              </div>
+              <p class="rating-hint">Cliquez sur les étoiles pour attribuer une note</p>
+            </div>
+
+            <!-- Commentaire -->
+            <div class="feedback-input">
+              <label>Commentaire :</label>
+              <textarea
+                v-model="feedbackText"
+                placeholder="Partagez votre expérience avec ce freelance..."
+                rows="4"
+                maxlength="500"
+                class="feedback-textarea"
+              ></textarea>
+              <div class="char-counter">
+                <span :class="feedbackText.length > 450 ? 'warning' : ''">
+                  {{ feedbackText.length }}/500
+                </span>
+              </div>
+            </div>
+
+            <!-- Aperçu -->
+            <div v-if="ratingValue > 0 || feedbackText" class="preview-section">
+              <h5>Aperçu de votre évaluation :</h5>
+              <div v-if="ratingValue > 0" class="preview-rating">
+                <span>Note :</span>
+                <div class="stars">
+                  <span v-for="i in 5" :key="i" class="star">
+                    {{ i <= ratingValue ? '★' : '☆' }}
+                  </span>
+                </div>
+                <span class="rating-text">{{ ratingValue }}/5</span>
+              </div>
+              <div v-if="feedbackText" class="preview-feedback">
+                <span>Commentaire :</span>
+                <p>{{ feedbackText }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-modal-cancel" @click="closeCompleteModal" :disabled="isCompleting">
+            Annuler
+          </button>
+          <button class="btn-modal-complete-no-eval" @click="completeWithoutEvaluation" :disabled="isCompleting">
+            Compléter sans évaluer
+          </button>
+          <button class="btn-modal-submit" @click="submitEvaluation" :disabled="isCompleting">
+            <span v-if="isCompleting">
+              <i class="fas fa-spinner fa-spin"></i> Traitement...
+            </span>
+            <span v-else>
+              <i class="fas fa-check-circle"></i> Finaliser avec évaluation
+            </span>
+          </button>
+        </div>
+
+        <!-- Messages d'erreur -->
+        <div v-if="completeError" class="modal-error">
+          <i class="fas fa-exclamation-circle"></i> {{ completeError }}
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -272,6 +397,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useMissionStore } from '@/stores/missions'
 import { useRouter } from 'vue-router'
+import axios from 'axios'
 
 const missionsStore = useMissionStore()
 const router = useRouter()
@@ -283,6 +409,15 @@ const loading = ref(false)
 const saving = ref(false)
 const actionLoading = ref(false)
 const error = ref(null)
+
+// États pour la modal de complétion
+const showCompleteModal = ref(false)
+const isCompleting = ref(false)
+const currentMissionForCompletion = ref(null)
+const acceptedFreelance = ref(null)
+const ratingValue = ref(0)
+const feedbackText = ref('')
+const completeError = ref('')
 
 const editForm = reactive({
   title: '',
@@ -317,6 +452,16 @@ const totalPendingApplications = computed(() => missionsStore.totalPendingApplic
 const filteredMissions = computed(() => {
   if (!selectedStatus.value) return missionsStore.myMissions
   return missionsStore.myMissions.filter(m => m.status === selectedStatus.value)
+})
+
+const freelanceInitials = computed(() => {
+  if (!acceptedFreelance.value?.full_name) return 'F'
+  return acceptedFreelance.value.full_name
+    .split(' ')
+    .map(name => name[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
 })
 
 // Fonctions utilitaires
@@ -451,22 +596,122 @@ const publishMission = async id => {
   }
 }
 
-const completeMission = async id => {
-  const mission = missionsStore.myMissions.find(m => m.id === id)
+const openCompleteModal = async (mission) => {
   if (!mission || mission.status !== 'in_progress') return
   
-  if (!confirm('Êtes-vous sûr de vouloir marquer cette mission comme complétée ?')) return
+  // Réinitialiser les valeurs
+  ratingValue.value = 0
+  feedbackText.value = ''
+  completeError.value = ''
   
-  actionLoading.value = true
+  // Charger les informations du freelance accepté
   try {
-    await missionsStore.completeMission(id)
-    await loadMissions() // Recharger les données
-    alert('Mission marquée comme complétée !')
+    currentMissionForCompletion.value = mission
+    
+    // Récupérer le freelance accepté pour cette mission
+    const token = localStorage.getItem('token')
+    const response = await axios.get(`/api/missions/${mission.id}/applications/accepted`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    
+    if (response.data.freelance) {
+      acceptedFreelance.value = response.data.freelance
+      // Pré-remplir la note actuelle du freelance
+      if (acceptedFreelance.value.rating) {
+        ratingValue.value = Math.round(acceptedFreelance.value.rating)
+      }
+    } else {
+      acceptedFreelance.value = {
+        full_name: 'Freelance non spécifié',
+        title: '',
+        rating: 0,
+        completed_projects: 0
+      }
+    }
+    
+  } catch (error) {
+    console.error('Erreur lors du chargement des informations:', error)
+    acceptedFreelance.value = {
+      full_name: 'Freelance non trouvé',
+      title: '',
+      rating: 0,
+      completed_projects: 0
+    }
+  }
+  
+  showCompleteModal.value = true
+}
+
+const closeCompleteModal = () => {
+  if (isCompleting.value) return
+  
+  showCompleteModal.value = false
+  currentMissionForCompletion.value = null
+  acceptedFreelance.value = null
+  ratingValue.value = 0
+  feedbackText.value = ''
+  completeError.value = ''
+}
+
+const submitEvaluation = async () => {
+  if (!currentMissionForCompletion.value) return
+  
+  isCompleting.value = true
+  completeError.value = ''
+  
+  try {
+    const evaluationData = {}
+    
+    // Inclure la note seulement si > 0
+    if (ratingValue.value > 0) {
+      evaluationData.rating = ratingValue.value
+    }
+    
+    // Inclure le feedback seulement s'il n'est pas vide
+    if (feedbackText.value.trim()) {
+      evaluationData.feedback = feedbackText.value.trim()
+    }
+    
+    // Utiliser la méthode du store
+    await missionsStore.completeMission(currentMissionForCompletion.value.id, evaluationData)
+    
+    // Recharger les missions
+    await loadMissions()
+    
+    // Fermer la modal et montrer un message de succès
+    showCompleteModal.value = false
+    alert('Mission complétée avec succès ! L\'évaluation a été enregistrée.')
+    
   } catch (error) {
     console.error('❌ Erreur lors de la complétion:', error)
-    alert('Erreur lors de la complétion: ' + (error.response?.data?.error || error.message))
+    completeError.value = error.response?.data?.error || error.message || 'Erreur lors de la complétion'
   } finally {
-    actionLoading.value = false
+    isCompleting.value = false
+  }
+}
+
+const completeWithoutEvaluation = async () => {
+  if (!currentMissionForCompletion.value) return
+  
+  isCompleting.value = true
+  completeError.value = ''
+  
+  try {
+    // Compléter sans évaluation
+    await missionsStore.completeMission(currentMissionForCompletion.value.id, {})
+    
+    // Recharger les missions
+    await loadMissions()
+    
+    // Fermer la modal et montrer un message de succès
+    showCompleteModal.value = false
+    alert('Mission complétée sans évaluation !')
+    
+  } catch (error) {
+    console.error('❌ Erreur lors de la complétion:', error)
+    completeError.value = error.response?.data?.error || error.message || 'Erreur lors de la complétion'
+  } finally {
+    isCompleting.value = false
   }
 }
 
@@ -516,6 +761,409 @@ const duplicateMission = async id => {
 </script>
 
 <style scoped>
+/* Styles existants... */
+
+/* Styles pour la modal de complétion */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 24px;
+  color: #1e293b;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #64748b;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.modal-close:hover {
+  color: #dc2626;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.modal-subtitle {
+  color: #64748b;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.mission-summary {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.mission-summary h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  color: #1e293b;
+}
+
+.mission-desc {
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.freelance-info {
+  margin-bottom: 24px;
+}
+
+.freelance-info h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #334155;
+}
+
+.freelance-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.freelance-avatar {
+  width: 50px;
+  height: 50px;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 18px;
+}
+
+.freelance-details h5 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  color: #1e293b;
+}
+
+.freelance-details p {
+  margin: 0 0 8px 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.freelance-rating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.freelance-rating .stars {
+  display: flex;
+  gap: 2px;
+}
+
+.freelance-rating .star {
+  font-size: 16px;
+  color: #FFD700;
+}
+
+.rating-text {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.evaluation-section {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.evaluation-section h4 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  color: #1e293b;
+}
+
+.rating-input {
+  margin-bottom: 24px;
+}
+
+.rating-input label {
+  display: block;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 10px;
+}
+
+.star-rating {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.star-btn {
+  background: none;
+  border: none;
+  font-size: 32px;
+  cursor: pointer;
+  color: #E5E7EB;
+  transition: all 0.2s;
+  padding: 4px;
+  line-height: 1;
+}
+
+.star-btn.selected {
+  color: #F59E0B;
+  transform: scale(1.1);
+}
+
+.star-btn:hover {
+  color: #FBBF24;
+  transform: scale(1.1);
+}
+
+.rating-display {
+  font-size: 20px;
+  font-weight: bold;
+  color: #333;
+  min-width: 50px;
+}
+
+.rating-hint {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+}
+
+.feedback-input {
+  margin-bottom: 20px;
+}
+
+.feedback-input label {
+  display: block;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 10px;
+}
+
+.feedback-textarea {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #E5E7EB;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  transition: border-color 0.2s;
+}
+
+.feedback-textarea:focus {
+  outline: none;
+  border-color: #4A90E2;
+}
+
+.char-counter {
+  text-align: right;
+  margin-top: 5px;
+  font-size: 12px;
+  color: #666;
+}
+
+.char-counter .warning {
+  color: #EF4444;
+  font-weight: bold;
+}
+
+.preview-section {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 20px;
+  border: 1px solid #E5E7EB;
+}
+
+.preview-section h5 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #334155;
+}
+
+.preview-rating {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.preview-feedback span {
+  font-weight: 600;
+  color: #475569;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.preview-feedback p {
+  margin: 0;
+  padding: 12px;
+  background: #F9FAFB;
+  border-radius: 6px;
+  color: #4B5563;
+  line-height: 1.5;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 12px;
+  padding: 24px;
+  border-top: 2px solid #e2e8f0;
+}
+
+.btn-modal-cancel,
+.btn-modal-complete-no-eval,
+.btn-modal-submit {
+  flex: 1;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-modal-cancel {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  color: #64748b;
+}
+
+.btn-modal-cancel:hover:not(:disabled) {
+  background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+  transform: translateY(-2px);
+}
+
+.btn-modal-complete-no-eval {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.btn-modal-complete-no-eval:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
+}
+
+.btn-modal-submit {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+}
+
+.btn-modal-submit:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.modal-error {
+  background: #FEF2F2;
+  color: #DC2626;
+  padding: 12px 16px;
+  margin: 0 24px 24px;
+  border-radius: 8px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-left: 4px solid #DC2626;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive pour la modal */
+@media (max-width: 768px) {
+  .modal-content {
+    width: 95%;
+    margin: 10px;
+  }
+  
+  .modal-footer {
+    flex-direction: column;
+  }
+  
+  .btn-modal-cancel,
+  .btn-modal-complete-no-eval,
+  .btn-modal-submit {
+    width: 100%;
+  }
+}
 /* Ajoutez ces styles supplémentaires */
 .pending-stat {
   background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);

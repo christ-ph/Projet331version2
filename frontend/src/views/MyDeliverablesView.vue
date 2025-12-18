@@ -120,7 +120,7 @@
                 :to="{ name: 'MissionDetails', params: { id: deliverable.mission_id } }"
                 class="mission-link"
               >
-                {{ deliverable.mission_title }}
+                {{ deliverable.mission_title || `Mission #${deliverable.mission_id}` }}
               </router-link>
             </div>
           </div>
@@ -311,7 +311,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useDeliverablesStore } from '@/stores/deliverables'
 import { useMissionStore } from '@/stores/missions'
 import { useAuthStore } from '@/stores/auth'
@@ -319,6 +320,7 @@ import AcceptModal from '@/components/deliverables/AcceptModal.vue'
 import RejectModal from '@/components/deliverables/RejectModal.vue'
 import DeliverableForm from '@/components/deliverables/DeliverableForm.vue'
 
+const router = useRouter()
 const deliverablesStore = useDeliverablesStore()
 const missionsStore = useMissionStore()
 const authStore = useAuthStore()
@@ -332,9 +334,43 @@ const showCreateModal = ref(false)
 const editingDeliverable = ref(null)
 const loading = ref(false)
 
+// CORRECTION ICI : Utilisez 'role' au lieu de 'type' et normalisez la casse
 const user = computed(() => authStore.user)
-const isClient = computed(() => user.value?.profile?.type === 'client')
-const isFreelance = computed(() => user.value?.profile?.type === 'freelance')
+
+// Fonction pour normaliser le type d'utilisateur
+const getUserType = computed(() => {
+  if (!user.value) return null
+  
+  // Vérifiez différentes propriétés possibles
+  const role = user.value.role || user.value.type || user.value.user_type
+  
+  console.log('🔍 Rôle détecté:', role)
+  
+  // Normalisez la casse
+  if (!role) return null
+  
+  const normalizedRole = role.toLowerCase()
+  
+  // Mappez les valeurs possibles
+  if (normalizedRole.includes('freelance') || normalizedRole === 'freelance') {
+    return 'freelance'
+  } else if (normalizedRole.includes('client') || normalizedRole === 'client') {
+    return 'client'
+  }
+  
+  return null
+})
+
+const isClient = computed(() => getUserType.value === 'client')
+const isFreelance = computed(() => getUserType.value === 'freelance')
+
+// Affichez pour debug
+watch(user, (newUser) => {
+  console.log('👤 User updated:', newUser)
+  console.log('🎯 Role:', newUser?.role)
+  console.log('🎯 Type:', newUser?.type)
+  console.log('🎯 getUserType:', getUserType.value)
+}, { immediate: true })
 
 // Récupérer les données appropriées
 const deliverables = computed(() => deliverablesStore.deliverables)
@@ -350,6 +386,7 @@ const stats = computed(() => {
   
   if (!isClient.value) {
     baseStats.unshift({ label: 'Brouillons', value: 'draft' })
+    baseStats.push({ label: 'Révision demandée', value: 'needs_revision' })
   }
   
   baseStats.push({ label: 'Rejetés', value: 'rejected' })
@@ -380,34 +417,106 @@ const filteredDeliverables = computed(() => {
     filtered = filtered.filter(d => 
       d.title.toLowerCase().includes(query) ||
       d.description?.toLowerCase().includes(query) ||
-      d.mission_title?.toLowerCase().includes(query)
+      (d.mission_title || `Mission #${d.mission_id}`).toLowerCase().includes(query)
     )
   }
   
   return filtered
 })
 
-onMounted(async () => {
-  await loadData()
-})
+// Initialisation robuste de la page
+async function initializePage() {
+  try {
+    // Vérifier si l'utilisateur est connecté
+    await authStore.initialize()
+    
+    if (!user.value) {
+      console.error('Utilisateur non connecté')
+      router.push('/login')
+      return
+    }
+    
+    console.log('👤 Type utilisateur détecté:', getUserType.value)
+    console.log('👤 Données utilisateur complètes:', user.value)
+    console.log('👤 Role brut:', user.value.role)
+    console.log('👤 Type brut:', user.value.type)
+    
+    await loadData()
+  } catch (error) {
+    console.error('❌ Erreur initialisation page:', error)
+    loading.value = false
+  }
+}
 
 async function loadData() {
   loading.value = true
+  
   try {
-    if (isClient.value) {
-      // Client: charger les livrables à review
-      await deliverablesStore.fetchClientDeliverables()
-    } else {
-      // Freelance: charger mes livrables et mes missions
-      await deliverablesStore.fetchMyDeliverables()
-      await missionsStore.fetchMyMissions()
+    const userType = getUserType.value
+    
+    if (!userType) {
+      console.error('❌ Impossible de déterminer le type utilisateur')
+      console.error('📊 Données utilisateur:', user.value)
+      throw new Error('Impossible de déterminer votre type de compte. Contactez le support.')
     }
+    
+    if (userType === 'client') {
+      console.log('🏢 Chargement livrables client...')
+      await deliverablesStore.fetchClientDeliverables()
+    } else if (userType === 'freelance') {
+      console.log('👨‍💻 Chargement livrables freelance...')
+      await deliverablesStore.fetchMyDeliverables()
+      
+      // Charger les missions en parallèle
+      try {
+        await Promise.all([
+          missionsStore.fetchMyMissions()
+        ])
+      } catch (missionError) {
+        console.warn('⚠️ Erreur chargement missions:', missionError.message)
+      }
+    } else {
+      console.error('❌ Type utilisateur inconnu:', userType)
+      throw new Error(`Type utilisateur "${userType}" non pris en charge`)
+    }
+    
+    console.log('✅ Données chargées:', {
+      livrables: deliverables.value.length,
+      missions: myMissions.value.length
+    })
+    
   } catch (error) {
-    console.error('Erreur chargement:', error)
+    console.error('❌ Erreur chargement données:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    })
+    
+    // Gestion d'erreur spécifique
+    if (error.response?.status === 401) {
+      alert('Session expirée. Veuillez vous reconnecter.')
+      router.push('/login')
+    } else if (error.response?.status === 403) {
+      alert('Accès refusé. Vous n\'avez pas les permissions nécessaires.')
+    } else {
+      alert(`Erreur lors du chargement: ${error.message}`)
+    }
   } finally {
     loading.value = false
   }
 }
+
+onMounted(() => {
+  initializePage()
+})
+
+// Recharger quand l'utilisateur change
+watch(getUserType, (newType, oldType) => {
+  if (newType && newType !== oldType) {
+    console.log('🔄 Type utilisateur changé, rechargement...')
+    loadData()
+  }
+})
 
 // Fonctions utilitaires
 function getStatusLabel(status) {
@@ -423,88 +532,806 @@ function getStatusLabel(status) {
 }
 
 function formatDate(dateString) {
-  return new Date(dateString).toLocaleDateString('fr-FR')
+  if (!dateString) return 'Date non spécifiée'
+  return new Date(dateString).toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  })
 }
 
 // Actions
-async function submitDeliverable(id) {
-  if (confirm('Soumettre ce livrable pour review ?')) {
-    try {
-      await deliverablesStore.submitDeliverable(id)
-      await loadData()
-    } catch (error) {
-      console.error('Erreur soumission:', error)
-    }
+async function submitDeliverable(deliverableId) {
+  if (!confirm('Soumettre ce livrable pour review ?')) return
+  
+  try {
+    loading.value = true
+    await deliverablesStore.submitDeliverable(deliverableId)
+    await loadData()
+    alert('Livrable soumis avec succès!')
+  } catch (error) {
+    console.error('Erreur soumission:', error)
+    alert('Erreur lors de la soumission: ' + (error.message || 'Erreur inconnue'))
+  } finally {
+    loading.value = false
   }
 }
 
-async function deleteDeliverable(id) {
-  if (confirm('Supprimer définitivement ce livrable ?')) {
-    try {
-      await deliverablesStore.deleteDeliverable(id)
-      await loadData()
-    } catch (error) {
-      console.error('Erreur suppression:', error)
-    }
+async function deleteDeliverable(deliverableId) {
+  if (!confirm('Supprimer définitivement ce livrable ?')) return
+  
+  try {
+    loading.value = true
+    await deliverablesStore.deleteDeliverable(deliverableId)
+    await loadData()
+    alert('Livrable supprimé avec succès!')
+  } catch (error) {
+    console.error('Erreur suppression:', error)
+    alert('Erreur lors de la suppression: ' + (error.message || 'Erreur inconnue'))
+  } finally {
+    loading.value = false
   }
 }
 
-async function startReview(id) {
-  if (confirm('Commencer la review de ce livrable ?')) {
-    try {
-      await deliverablesStore.startReview(id)
-      await loadData()
-    } catch (error) {
-      console.error('Erreur début review:', error)
-    }
+async function startReview(deliverableId) {
+  if (!confirm('Commencer la review de ce livrable ?')) return
+  
+  try {
+    loading.value = true
+    await deliverablesStore.startReview(deliverableId)
+    await loadData()
+    alert('Review commencée! Vous pouvez maintenant accepter ou rejeter le livrable.')
+  } catch (error) {
+    console.error('Erreur début review:', error)
+    alert('Erreur lors du début de la review: ' + (error.message || 'Erreur inconnue'))
+  } finally {
+    loading.value = false
   }
 }
 
 function editDeliverable(deliverable) {
-  editingDeliverable.value = deliverable
+  console.log('✏️ Édition livrable:', deliverable)
+  editingDeliverable.value = { ...deliverable } // Créer une copie
 }
 
-async function handleCreateSubmit() {
-  await loadData()
-  showCreateModal.value = false
+// Gestion de la création
+async function handleCreateSubmit(formData) {
+  try {
+    loading.value = true
+    await deliverablesStore.createDeliverable(formData)
+    await loadData()
+    showCreateModal.value = false
+    alert('Livrable créé avec succès!')
+  } catch (error) {
+    console.error('Erreur création:', error)
+    alert('Erreur lors de la création: ' + (error.message || 'Erreur inconnue'))
+  } finally {
+    loading.value = false
+  }
 }
 
-async function handleEditSubmit() {
-  await loadData()
-  editingDeliverable.value = null
+// Gestion de l'édition
+async function handleEditSubmit(formData) {
+  if (!editingDeliverable.value?.id) {
+    alert('Erreur: Livrable non identifié')
+    return
+  }
+  
+  try {
+    loading.value = true
+    await deliverablesStore.updateDeliverable(editingDeliverable.value.id, formData)
+    await loadData()
+    editingDeliverable.value = null
+    alert('Livrable modifié avec succès!')
+  } catch (error) {
+    console.error('Erreur modification:', error)
+    alert('Erreur lors de la modification: ' + (error.message || 'Erreur inconnue'))
+  } finally {
+    loading.value = false
+  }
 }
 
+// Gestion des actions client
 async function handleAccept(deliverableId) {
   try {
+    loading.value = true
     await deliverablesStore.acceptDeliverable(deliverableId)
     await loadData()
     showAcceptModal.value = null
+    alert('Livrable accepté avec succès!')
   } catch (error) {
     console.error('Erreur acceptation:', error)
+    alert('Erreur lors de l\'acceptation: ' + (error.message || 'Erreur inconnue'))
+  } finally {
+    loading.value = false
   }
 }
 
 async function handleReject(deliverableId, feedback) {
   try {
+    loading.value = true
     await deliverablesStore.rejectDeliverable(deliverableId, feedback)
     await loadData()
     showRejectModal.value = null
+    alert('Livrable rejeté avec succès!')
   } catch (error) {
     console.error('Erreur rejet:', error)
+    alert('Erreur lors du rejet: ' + (error.message || 'Erreur inconnue'))
+  } finally {
+    loading.value = false
   }
 }
 
-async function downloadFile(id) {
+async function downloadFile(deliverableId) {
   try {
-    await deliverablesStore.downloadFile(id)
+    await deliverablesStore.downloadFile(deliverableId)
   } catch (error) {
     console.error('Erreur téléchargement:', error)
-    alert('Erreur lors du téléchargement du fichier')
+    alert('Erreur lors du téléchargement du fichier: ' + (error.message || 'Erreur inconnue'))
   }
 }
+
+// Rafraîchir périodiquement (optionnel)
+const refreshInterval = setInterval(() => {
+  if (document.visibilityState === 'visible' && getUserType.value) {
+    loadData()
+  }
+}, 30000) // Toutes les 30 secondes
+
+// Nettoyer l'intervalle
+onUnmounted(() => {
+  clearInterval(refreshInterval)
+})
 </script>
 
 <style scoped>
+.my-deliverables-page {
+  max-width: 1200px;
+  margin: 100px auto 50px;
+  padding: 0 20px;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* En-tête */
+.page-header {
+  margin-bottom: 40px;
+}
+
+.page-title {
+  font-size: 32px;
+  margin-bottom: 10px;
+  color: #111827;
+  font-weight: 700;
+}
+
+.page-subtitle {
+  color: #6b7280;
+  font-size: 16px;
+  margin: 0;
+}
+
+/* Bouton Nouveau Livrable */
+.action-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 24px;
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+}
+
+.action-btn.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+}
+
+.action-btn.primary:active {
+  transform: translateY(0);
+}
+
+/* Filtres */
+.filters-card {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e5e7eb;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 20px;
+}
+
+@media (min-width: 768px) {
+  .filters-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-label {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.filter-input,
+.filter-select {
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #374151;
+  background: white;
+  transition: border-color 0.2s;
+}
+
+.filter-input:focus,
+.filter-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Statistiques */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+@media (min-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.stat-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e5e7eb;
+  padding: 20px;
+  text-align: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.stat-value {
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.stat-value.draft {
+  color: #6b7280;
+}
+
+.stat-value.submitted {
+  color: #3b82f6;
+}
+
+.stat-value.under_review {
+  color: #f59e0b;
+}
+
+.stat-value.accepted {
+  color: #10b981;
+}
+
+.stat-value.rejected {
+  color: #ef4444;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+/* Liste des livrables */
+.deliverables-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.deliverable-card {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.deliverable-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.deliverable-content {
+  padding: 24px;
+}
+
+/* En-tête mission */
+.mission-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.mission-label {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.mission-link {
+  color: #3b82f6;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  transition: color 0.2s;
+}
+
+.mission-link:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* Titre et statut */
+.deliverable-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.deliverable-title-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.deliverable-title {
+  font-size: 18px;
+  color: #111827;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* Description */
+.deliverable-description {
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 20px 0;
+}
+
+.deliverable-description.empty {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+/* Métadonnées */
+.deliverable-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.meta-link {
+  color: #3b82f6;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.2s;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+}
+
+.meta-link:hover {
+  color: #2563eb;
+}
+
+.meta-link.download:hover {
+  color: #2563eb;
+}
+
+.meta-link.view-mission {
+  color: #6b7280;
+}
+
+.meta-link.view-mission:hover {
+  color: #374151;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* Feedback client */
+.client-feedback {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.feedback-label {
+  font-size: 12px;
+  color: #92400e;
+  font-weight: 600;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.feedback-content {
+  color: #92400e;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Actions */
+.deliverable-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.action-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.action-btn.edit {
+  background: #fef3c7;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+
+.action-btn.edit:hover {
+  background: #fde68a;
+  transform: translateY(-1px);
+}
+
+.action-btn.submit {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.action-btn.submit:hover {
+  background: #a7f3d0;
+  transform: translateY(-1px);
+}
+
+.action-btn.delete {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+
+.action-btn.delete:hover {
+  background: #fca5a5;
+  transform: translateY(-1px);
+}
+
+.action-btn.review {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #93c5fd;
+}
+
+.action-btn.review:hover {
+  background: #93c5fd;
+  transform: translateY(-1px);
+}
+
+.action-btn.accept {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.action-btn.accept:hover {
+  background: #a7f3d0;
+  transform: translateY(-1px);
+}
+
+.action-btn.reject {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+
+.action-btn.reject:hover {
+  background: #fca5a5;
+  transform: translateY(-1px);
+}
+
+/* Badges de statut */
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.draft {
+  background-color: #f3f4f6;
+  color: #6b7280;
+}
+
+.status-badge.submitted {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-badge.under_review {
+  background-color: #fef3c7;
+  color: #d97706;
+}
+
+.status-badge.accepted {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.status-badge.rejected {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.status-badge.needs_revision {
+  background-color: #fed7aa;
+  color: #c2410c;
+}
+
+/* Modals */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 24px 0 24px;
+  margin-bottom: 20px;
+}
+
+.modal-title {
+  font-size: 20px;
+  color: #111827;
+  font-weight: 700;
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.modal-body {
+  padding: 0 24px 24px 24px;
+}
+
+/* États */
+.loading-state {
+  text-align: center;
+  padding: 80px 20px;
+  color: #6b7280;
+  font-size: 16px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 80px 20px;
+  background: #f9fafb;
+  border-radius: 16px;
+  border: 2px dashed #d1d5db;
+  margin-top: 20px;
+}
+
+.empty-icon {
+  font-size: 48px;
+  color: #9ca3af;
+  margin-bottom: 16px;
+}
+
+.empty-title {
+  font-size: 18px;
+  color: #111827;
+  margin: 0 0 8px 0;
+  font-weight: 600;
+}
+
+.empty-message {
+  color: #6b7280;
+  font-size: 14px;
+  margin: 0 0 24px 0;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .my-deliverables-page {
+    margin-top: 80px;
+    padding: 0 16px;
+  }
+  
+  .page-title {
+    font-size: 28px;
+  }
+  
+  .action-header {
+    justify-content: center;
+  }
+  
+  .action-btn.primary {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .filters-card {
+    padding: 20px;
+  }
+  
+  .filters-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .deliverable-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .deliverable-title-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .deliverable-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .deliverable-actions {
+    flex-direction: column;
+  }
+  
+  .action-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .modal-content {
+    margin: 0 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .stat-card {
+    padding: 16px;
+  }
+  
+  .stat-value {
+    font-size: 28px;
+  }
+}
 .my-deliverables-page {
   max-width: 1200px;
   margin: 100px auto 50px;

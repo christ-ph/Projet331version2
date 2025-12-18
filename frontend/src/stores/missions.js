@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
 
-export  const useMissionStore = defineStore('missions', {
+export const useMissionStore = defineStore('missions', {
   state: () => ({
     missions: [],        // toutes les missions (public / recherche)
     myMissions: [],      // missions du client connecté
@@ -9,7 +9,14 @@ export  const useMissionStore = defineStore('missions', {
     missionApplications: [], // candidatures pour la mission courante (client)
     availableMissions: [], // missions visibles par les freelances (statut "open")
     loading: false,
-    error: null
+    error: null,
+    selectedMission: null, // Mission sélectionnée pour les détails
+    filters: {
+      status: '',
+      skills: [],
+      budget_min: null,
+      budget_max: null
+    }
   }),
 
   getters: {
@@ -36,6 +43,37 @@ export  const useMissionStore = defineStore('missions', {
       }, 0)
     },
 
+    // NOUVEAUX GETTERS
+    filteredAvailableMissions: (state) => {
+      let filtered = state.availableMissions;
+      
+      // Filtrer par statut
+      if (state.filters.status) {
+        filtered = filtered.filter(m => m.status === state.filters.status);
+      }
+      
+      // Filtrer par compétences
+      if (state.filters.skills && state.filters.skills.length > 0) {
+        filtered = filtered.filter(mission => {
+          if (!mission.required_skills) return false;
+          return state.filters.skills.some(skill => 
+            mission.required_skills.includes(skill)
+          );
+        });
+      }
+      
+      // Filtrer par budget
+      if (state.filters.budget_min !== null) {
+        filtered = filtered.filter(m => m.budget >= state.filters.budget_min);
+      }
+      
+      if (state.filters.budget_max !== null) {
+        filtered = filtered.filter(m => m.budget <= state.filters.budget_max);
+      }
+      
+      return filtered;
+    },
+
     // Trouver une mission par ID dans les différentes listes
     getMissionById: (state) => (id) => {
       // Chercher dans myMissions d'abord
@@ -53,7 +91,24 @@ export  const useMissionStore = defineStore('missions', {
 
     // Alias pour compatibilité avec ton composant
     missionDetails: (state) => state.currentMission,
-    applications: (state) => state.missionApplications
+    applications: (state) => state.missionApplications,
+    
+    // Statistiques supplémentaires
+    missionStats: (state) => {
+      const stats = {
+        total: state.myMissions.length,
+        draft: state.draftMissions.length,
+        published: state.publishedMissions.length,
+        inProgress: state.inProgressMissions.length,
+        completed: state.completedMissions.length,
+        cancelled: state.cancelledMissions.length,
+        totalBudget: state.myMissions.reduce((sum, m) => sum + (m.budget || 0), 0),
+        averageBudget: state.myMissions.length > 0 
+          ? state.myMissions.reduce((sum, m) => sum + (m.budget || 0), 0) / state.myMissions.length
+          : 0
+      };
+      return stats;
+    }
   },
 
   actions: {
@@ -104,13 +159,7 @@ export  const useMissionStore = defineStore('missions', {
         
         // Si la candidature est acceptée, mettre à jour le statut de la mission
         if (status === 'accepted') {
-          this.myMissions = this.myMissions.map(mission =>
-            mission.id === missionId ? { 
-              ...mission, 
-              status: 'in_progress',
-              updated_at: new Date().toISOString()
-            } : mission
-          )
+          this.updateLocalMissionStatus(missionId, 'in_progress')
         }
         
         return res.data
@@ -132,21 +181,34 @@ export  const useMissionStore = defineStore('missions', {
       return this.updateApplicationStatus(missionId, applicationId, 'rejected')
     },
 
-    // Marquer une mission comme complétée
-    async completeMission(missionId) {
+    // ======================
+    // COMPLÉTION DE MISSION AVEC ÉVALUATION
+    // ======================
+
+    // Marquer une mission comme complétée avec évaluation optionnelle
+    async completeMission(missionId, evaluationData = {}) {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.put(`/api/missions/${missionId}/complete`, {})
+        const res = await axios.put(`/api/missions/${missionId}/complete`, evaluationData)
         
-        // Mettre à jour localement le statut
-        this.myMissions = this.myMissions.map(mission =>
-          mission.id === missionId ? { 
-            ...mission, 
-            status: 'completed',
-            updated_at: new Date().toISOString()
-          } : mission
-        )
+        // Utiliser la méthode de mise à jour locale
+        this.updateLocalMissionStatus(missionId, 'completed')
+        
+        // Si évaluation, stocker localement
+        if (evaluationData.rating || evaluationData.feedback) {
+          this.myMissions = this.myMissions.map(mission => {
+            if (mission.id === missionId) {
+              return {
+                ...mission,
+                client_rating: evaluationData.rating,
+                client_feedback: evaluationData.feedback,
+                evaluated_at: new Date().toISOString()
+              }
+            }
+            return mission
+          })
+        }
         
         return res.data
       } catch (e) {
@@ -164,14 +226,8 @@ export  const useMissionStore = defineStore('missions', {
       try {
         const res = await axios.put(`/api/missions/${missionId}/cancel`, {})
         
-        // Mettre à jour localement le statut
-        this.myMissions = this.myMissions.map(mission =>
-          mission.id === missionId ? { 
-            ...mission, 
-            status: 'cancelled',
-            updated_at: new Date().toISOString()
-          } : mission
-        )
+        // Mettre à jour localement
+        this.updateLocalMissionStatus(missionId, 'cancelled')
         
         return res.data
       } catch (e) {
@@ -214,6 +270,11 @@ export  const useMissionStore = defineStore('missions', {
         this.myMissions = this.myMissions.map(m =>
           m.id === id ? { ...m, ...res.data, updated_at: new Date().toISOString() } : m
         )
+
+        // Mettre à jour la mission courante si c'est elle
+        if (this.currentMission?.id === id) {
+          this.currentMission = { ...this.currentMission, ...res.data }
+        }
 
         return res.data
       } catch (e) {
@@ -269,6 +330,22 @@ export  const useMissionStore = defineStore('missions', {
       }
     },
 
+    // Récupérer le freelance accepté pour une mission
+    async fetchAcceptedFreelance(missionId) {
+      this.loading = true
+      this.error = null
+      try {
+        const res = await axios.get(`/api/missions/${missionId}/applications/accepted`)
+        return res.data.freelance
+      } catch (e) {
+        this.error = e.response?.data?.error || 'Erreur chargement freelance'
+        console.error('Erreur fetchAcceptedFreelance:', e)
+        return null
+      } finally {
+        this.loading = false
+      }
+    },
+
     // ======================
     // PUBLICATION ET CHANGEMENT DE STATUT
     // ======================
@@ -281,13 +358,7 @@ export  const useMissionStore = defineStore('missions', {
         const res = await axios.post(`/api/missions/${id}/publish`)
         
         // Mettre à jour la mission dans myMissions
-        this.myMissions = this.myMissions.map(mission =>
-          mission.id === id ? { 
-            ...mission, 
-            status: 'open',
-            updated_at: new Date().toISOString()
-          } : mission
-        )
+        this.updateLocalMissionStatus(id, 'open')
         
         return res.data
       } catch (e) {
@@ -305,14 +376,8 @@ export  const useMissionStore = defineStore('missions', {
       try {
         const res = await axios.patch(`/api/missions/${id}/status`, { status })
         
-        // Mettre à jour la mission dans myMissions
-        this.myMissions = this.myMissions.map(mission =>
-          mission.id === id ? { 
-            ...mission, 
-            status: status,
-            updated_at: new Date().toISOString()
-          } : mission
-        )
+        // Mettre à jour localement
+        this.updateLocalMissionStatus(id, status)
         
         return res.data
       } catch (e) {
@@ -380,6 +445,22 @@ export  const useMissionStore = defineStore('missions', {
       }
     },
 
+    // Récupérer les détails d'une mission complétée
+    async fetchMissionCompletionDetails(id) {
+      this.loading = true
+      this.error = null
+      try {
+        const res = await axios.get(`/api/missions/${id}/completion`)
+        return res.data
+      } catch (e) {
+        this.error = e.response?.data?.error || 'Erreur chargement détails complétion'
+        console.error('Erreur fetchMissionCompletionDetails:', e)
+        throw e
+      } finally {
+        this.loading = false
+      }
+    },
+
     // Recherche avancée de missions
     async searchMissions(queryParams = {}) {
       this.loading = true
@@ -425,22 +506,168 @@ export  const useMissionStore = defineStore('missions', {
       }
     },
 
-    // Dupliquer une mission existante
-    async duplicateMission(id) {
+    // Dupliquer une mission existante avec options
+    async duplicateMission(id, options = {}) {
       const original = this.getMissionById(id)
       if (!original) {
         throw new Error('Mission non trouvée')
       }
 
       const duplicateData = {
-        title: `${original.title} (Copie)`,
+        title: options.title || `${original.title} (Copie)`,
         description: original.description,
-        budget: original.budget,
+        budget: options.budget || original.budget,
         required_skills: original.required_skills || [],
-        status: 'draft' // Toujours créer la copie en brouillon
+        status: options.status || 'draft',
+        deadline: options.deadline || original.deadline
       }
 
       return await this.createMission(duplicateData)
+    },
+
+    // Télécharger la facture d'une mission
+    async downloadInvoice(missionId) {
+      try {
+        const response = await axios.get(`/api/missions/${missionId}/invoice`, {
+          responseType: 'blob'
+        })
+        
+        // Créer un URL pour le fichier blob
+        const url = window.URL.createObjectURL(new Blob([response.data]))
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', `facture-mission-${missionId}.pdf`)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        
+        return true
+      } catch (e) {
+        console.error('Erreur téléchargement facture:', e)
+        throw e
+      }
+    },
+
+    // ======================
+    // NOUVELLES ACTIONS
+    // ======================
+    
+    // Définir les filtres
+    setFilters(newFilters) {
+      this.filters = { ...this.filters, ...newFilters }
+    },
+    
+    // Réinitialiser les filtres
+    resetFilters() {
+      this.filters = {
+        status: '',
+        skills: [],
+        budget_min: null,
+        budget_max: null
+      }
+    },
+    
+    // Sélectionner une mission
+    selectMission(mission) {
+      this.selectedMission = mission
+    },
+    
+    // Désélectionner une mission
+    clearSelectedMission() {
+      this.selectedMission = null
+    },
+    
+    // Mettre à jour le statut local d'une mission
+    updateLocalMissionStatus(missionId, status) {
+      // Mettre à jour dans myMissions
+      this.myMissions = this.myMissions.map(mission =>
+        mission.id === missionId ? { 
+          ...mission, 
+          status: status,
+          updated_at: new Date().toISOString()
+        } : mission
+      )
+      
+      // Mettre à jour dans availableMissions (retirer si complétée/annulée)
+      if (status === 'completed' || status === 'cancelled' || status === 'in_progress') {
+        this.availableMissions = this.availableMissions.filter(m => m.id !== missionId)
+      }
+      
+      // Mettre à jour la mission courante si c'est elle
+      if (this.currentMission?.id === missionId) {
+        this.currentMission = { 
+          ...this.currentMission, 
+          status: status,
+          updated_at: new Date().toISOString()
+        }
+      }
+      
+      // Mettre à jour la mission sélectionnée si c'est elle
+      if (this.selectedMission?.id === missionId) {
+        this.selectedMission = { 
+          ...this.selectedMission, 
+          status: status,
+          updated_at: new Date().toISOString()
+        }
+      }
+    },
+
+    // Recherche intelligente de missions
+    async smartSearch(searchParams) {
+      this.loading = true
+      this.error = null
+      try {
+        const response = await axios.get('/api/missions/search/smart', { 
+          params: searchParams 
+        })
+        
+        // Note: Vous devrez implémenter cette fonction getUserRole() 
+        // ou utiliser le store auth directement
+        
+        return response.data
+      } catch (error) {
+        this.error = error.response?.data?.error || 'Erreur lors de la recherche'
+        throw error
+      } finally {
+        this.loading = false
+      }
+    },
+    
+    // Récupérer les statistiques des missions
+    async fetchMissionStats() {
+      this.loading = true
+      this.error = null
+      try {
+        const res = await axios.get('/api/missions/stats')
+        return res.data
+      } catch (error) {
+        this.error = error.response?.data?.error || 'Erreur chargement statistiques'
+        return null
+      } finally {
+        this.loading = false
+      }
+    },
+    
+    // Exporter les missions au format CSV
+    async exportMissions(format = 'csv') {
+      try {
+        const response = await axios.get(`/api/missions/export?format=${format}`, {
+          responseType: 'blob'
+        })
+        
+        const url = window.URL.createObjectURL(new Blob([response.data]))
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', `missions-export.${format}`)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        
+        return true
+      } catch (error) {
+        console.error('Erreur export missions:', error)
+        throw error
+      }
     },
 
     // Réinitialiser le store
@@ -452,6 +679,8 @@ export  const useMissionStore = defineStore('missions', {
       this.missionApplications = []
       this.error = null
       this.loading = false
+      this.selectedMission = null
+      this.resetFilters()
     },
 
     // Réinitialiser uniquement les erreurs
@@ -467,6 +696,34 @@ export  const useMissionStore = defineStore('missions', {
     // Vider la mission courante
     clearCurrentMission() {
       this.currentMission = null
+    },
+
+    // Mettre à jour une mission dans toutes les listes
+    updateMissionInAllLists(missionId, updatedData) {
+      // Mettre à jour dans myMissions
+      this.myMissions = this.myMissions.map(mission =>
+        mission.id === missionId ? { ...mission, ...updatedData } : mission
+      )
+      
+      // Mettre à jour dans availableMissions
+      this.availableMissions = this.availableMissions.map(mission =>
+        mission.id === missionId ? { ...mission, ...updatedData } : mission
+      )
+      
+      // Mettre à jour dans missions (public)
+      this.missions = this.missions.map(mission =>
+        mission.id === missionId ? { ...mission, ...updatedData } : mission
+      )
+      
+      // Mettre à jour la mission courante si c'est elle
+      if (this.currentMission?.id === missionId) {
+        this.currentMission = { ...this.currentMission, ...updatedData }
+      }
+      
+      // Mettre à jour la mission sélectionnée si c'est elle
+      if (this.selectedMission?.id === missionId) {
+        this.selectedMission = { ...this.selectedMission, ...updatedData }
+      }
     }
   }
 })
