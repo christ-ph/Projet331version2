@@ -6,10 +6,13 @@ import HomeView from '@/views/HomeView.vue';
 import LoginView from '@/views/LoginView.vue';
 import RegisterView from '@/views/RegisterView.vue';
 import DashboardView from '@/views/DashboardView.vue';
+<<<<<<< HEAD
 import MyDeliverablesView from '@/views/MyDeliverablesView.vue';
 import ManageDeliverablesView from '@/views/ManageDeliverablesView.vue';
 import ChatView from '@/views/ChatView.vue';
 
+=======
+>>>>>>> 6a5d26e18890e20fc6efe05f547bdbab6ad8b388
 
 // Vues Freelance
 import AvailableMissionsView from '@/views/AvailableMissionView.vue';
@@ -18,15 +21,13 @@ import ApplyMissionView from '@/views/ApplyMissionView.vue';
 import CandidatureView from '@/views/CandidatureView.vue';
 import ProfilesFreelance from '@/views/ProfilesFreelance.vue';
 
-
 // Vues Client
 import CreateMissionView from '@/views/CreateMissionView.vue';
 import ClientMissionsView from '@/views/ClientMissionView.vue';
 import ClientMissionDetailView from '@/views/ClientMissionDetailView.vue';
 import ManageApplicationsView from '@/views/ManageApplicationsView.vue';
 import ProfilesClient from '@/views/ProfilesClient.vue';
-import ManageDeliverablesClientView from '@/views/ManageDeliverablesClientView.vue';
-import MissionFinView from '@/views/MissionFinView.vue';
+
 
 // Store Auth pour le guard
 import { useAuthStore } from '@/stores/auth';
@@ -61,40 +62,14 @@ const routes = [
   },
 
   // Dashboard (auth toutes roles)
- // ============================================
-  // NOUVELLES ROUTES LIVRABLES
-  // ============================================
-  
-  // Gestion des livrables d'une mission (accessible par client ET freelance de la mission)
-  {
-    path: '/missions/:missionId/deliverables',
-    name: 'ManageDeliverables',
-    component: ManageDeliverablesView,
-    meta: { 
-      requiresAuth: true,
-      title: 'Gestion des livrables'
-    }
-  },
-  
-  // Mes livrables (adapté au rôle)
-  {
-    path: '/my-deliverables',
-    name: 'MyDeliverables',
-    component: MyDeliverablesView,
-    meta: { 
-      requiresAuth: true,
-      requiresRole:'FREELANCE',
-      title: 'Mes livrables'
-    }
-  },
   { 
     path: '/dashboard', 
     name: 'Dashboard', 
     component: DashboardView, 
-    meta: { 
-      requiresAuth: true, 
-      title: 'Tableau de bord'
-    }
+     meta: { 
+       requiresAuth: true, 
+       title: 'Tableau de bord'
+     }
   },
   // chat
   {
@@ -180,26 +155,6 @@ const routes = [
       title: 'Mes Missions'
     }
   },
-    {
-    path: '/client/:missionId/deliverables', 
-    name: 'ManageDeliverablesClient',
-    component: ManageDeliverablesClientView,
-    meta: { 
-      requiresAuth: true,
-      requiresRole:"CLIENT",
-      title: 'Gestion des livrables client'
-    }
-  },
-      {
-    path: '/missions/client/:missionId/fins', 
-    name: 'MissionFinView',
-    component: MissionFinView,
-    meta: { 
-      requiresAuth: true,
-      requiresRole:"CLIENT",
-      title: 'Gestion des livrables client'
-    }
-  },
   {
     path: '/client/missions/:id',
     name: 'ClientMissionDetails',
@@ -226,8 +181,6 @@ const routes = [
     component: ManageApplicationsView,
     meta: { requiresAuth: true, requiresRole: 'CLIENT' }
   },
-
- 
 
   // Route 404
   {
