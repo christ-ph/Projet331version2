@@ -19,7 +19,6 @@ onMounted(() => {
   <div class="register-page">
     <div class="register-container">
       <div class="register-left">
-        <p>Créer un compte pour pouvoir accéder à la plateforme</p>
       </div>
 
       <div class="login-right">
