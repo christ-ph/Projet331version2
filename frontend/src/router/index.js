@@ -21,6 +21,7 @@ import ClientMissionDetailView from '@/views/ClientMissionDetailView.vue';
 import ManageApplicationsView from '@/views/ManageApplicationsView.vue';
 import ProfilesClient from '@/views/ProfilesClient.vue';
 
+
 // Store Auth pour le guard
 import { useAuthStore } from '@/stores/auth';
 import { useProfileStore } from '@/stores/profile';
@@ -58,10 +59,10 @@ const routes = [
     path: '/dashboard', 
     name: 'Dashboard', 
     component: DashboardView, 
-    meta: { 
-      requiresAuth: true, 
-      title: 'Tableau de bord'
-    }
+     meta: { 
+       requiresAuth: true, 
+       title: 'Tableau de bord'
+     }
   },
 
   // Routes Freelance
@@ -162,8 +163,6 @@ const routes = [
     component: ManageApplicationsView,
     meta: { requiresAuth: true, requiresRole: 'CLIENT' }
   },
-
- 
 
   // Route 404
   {
