@@ -99,9 +99,20 @@
             Marquer comme complétée
           </button>
 
+          <!-- Bouton pour démarrer le chat avec le freelance -->
+          <button 
+            v-if="mission?.status === 'IN_PROGRESS' && hasAcceptedFreelance"
+            @click="openMissionChat"
+            class="btn-chat"
+            :disabled="loadingAction"
+          >
+            <i class="fas fa-comments"></i>
+            Démarrer le chat
+          </button>
+
           <!-- Annuler la mission (tous statuts sauf completed et cancelled) -->
           <button 
-            v-if="mission.status !== 'COMPLETED' && mission.status !== 'CANCELLED'"
+            v-if="mission.status !== 'COMPLETED' && mission.status !== 'CANCELLED' && mission.status !== 'IN_PROGRESS'"
             @click="cancelMission"
             class="btn-cancel"
             :disabled="loadingAction"
@@ -111,91 +122,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Candidatures -->
-    <div v-if="applications.length > 0" class="applications-section">
-      <h2>Candidatures reçues ({{ applications.length }})</h2>
-
-      <div class="applications-grid">
-        <div v-for="app in applications" :key="app.id" class="application-card">
-          <div class="application-header">
-            <div class="freelancer-info">
-              <div class="avatar-container">
-                <img :src="app.photo" class="avatar" alt="Avatar" />
-              </div>
-              <div class="freelancer-details">
-                <h3>{{ app.freelancer_name }}</h3>
-                <p class="rating">
-                  ⭐ {{ app.rating }} / 5
-                  <span class="missions-count">
-                    ({{ app.completed_missions }} missions)
-                  </span>
-                </p>
-                <p class="skills" v-if="app.skills">{{ app.skills }}</p>
-              </div>
-            </div>
-
-            <span class="badge" :class="app.status.toLowerCase()">
-              {{ getApplicationStatusText(app.status) }}
-            </span>
-          </div>
-
-          <div class="application-content">
-            <p class="bio" v-if="app.bio">{{ app.bio }}</p>
-            
-            <div class="proposal-section" v-if="app.proposal">
-              <h4>Lettre de motivation</h4>
-              <p class="proposal">{{ app.proposal }}</p>
-            </div>
-
-            <div class="portfolio-section" v-if="app.portfolio?.length">
-              <h4>Portfolio ({{ app.portfolio.length }} projets)</h4>
-              <ul class="portfolio-list">
-                <li v-for="item in app.portfolio" :key="item.id">
-                  {{ item.title }}
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="application-actions">
-            <button class="profile-btn" @click="goToProfile(app.freelance_id)">
-              Voir profil complet
-            </button>
-
-            <!-- Boutons accepter/refuser uniquement si la mission est OPEN et candidature en attente -->
-            <div class="decision-buttons" v-if="mission?.status === 'OPEN' && app.status === 'PENDING'">
-              <button 
-                class="accept-btn" 
-                @click="acceptApplication(app.id)" 
-                :disabled="loadingAction || isFreelanceAlreadyAccepted"
-              >
-                Accepter
-              </button>
-              <button 
-                class="reject-btn" 
-                @click="rejectApplication(app.id)" 
-                :disabled="loadingAction"
-              >
-                Refuser
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Aucune candidature -->
-    <div v-if="applications.length === 0 && mission && mission.status === 'OPEN'" class="no-applications">
-      <div class="empty-state">
-        <div class="empty-icon">📭</div>
-        <h3>Aucune candidature reçue</h3>
-        <p>Cette mission est publiée mais n'a pas encore reçu de candidatures.</p>
-        <button class="refresh-btn" @click="refreshData">
-          Rafraîchir
-        </button>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -203,10 +129,12 @@
 import { ref, onMounted, computed } from 'vue'
 import { useMissionStore } from '@/stores/missions'
 import { useAuthStore } from '@/stores/auth'
+import { useChatStore } from '@/stores/chat';
 import { useRoute, useRouter } from 'vue-router'
 
 const missionsStore = useMissionStore()
 const authStore = useAuthStore()
+const chatStore = useChatStore();
 const route = useRoute()
 const router = useRouter()
 
@@ -215,6 +143,9 @@ const applications = ref([])
 const loading = ref(false)
 const loadingAction = ref(false)
 const error = ref(null)
+
+// Mission courante
+const mission = computed(() => missionsStore.missionDetails)
 
 // Fonctions utilitaires
 const formatDate = (dateString) => {
@@ -254,6 +185,16 @@ const isFreelanceAlreadyAccepted = computed(() => {
   return applications.value.some(app => app.status === 'ACCEPTED')
 })
 
+// Vérifier s'il y a un freelance accepté
+const hasAcceptedFreelance = computed(() => {
+  return applications.value.some(app => app.status === 'ACCEPTED');
+});
+
+// Trouver le freelance accepté
+const acceptedFreelance = computed(() => {
+  return applications.value.find(app => app.status === 'ACCEPTED');
+});
+
 // Chargement des données
 const loadData = async () => {
   loading.value = true
@@ -265,9 +206,9 @@ const loadData = async () => {
     // 1. Charger les détails de la mission
     await missionsStore.fetchMissionDetails(missionId)
     
-    
+    // Vérifier si la mission existe
     if (!missionsStore.missionDetails) {
-      missionDetails = route.push(`missions/client${missionId}`)
+      router.push(`/missions/client`)
       error.value = 'Mission non trouvée'
       return
     }
@@ -312,8 +253,32 @@ const loadData = async () => {
   }
 }
 
-// Mission courante
-const mission = computed(() => missionsStore.missionDetails)
+// Ouvrir le chat de mission
+const openMissionChat = async () => {
+  if (!mission.value || !acceptedFreelance.value) {
+    alert('Aucun freelance accepté pour cette mission.');
+    return;
+  }
+  
+  try {
+    loadingAction.value = true;
+    
+    // Utiliser le store chat pour récupérer ou créer le chat
+    const chat = await chatStore.getOrCreateMissionChat(mission.value.id);
+    
+    if (chat) {
+      // Naviguer vers la page de chat avec l'ID du chat
+      router.push(`/chat?chatId=${chat.id}`);
+    } else {
+      alert('Impossible de créer ou trouver le chat.');
+    }
+  } catch (error) {
+    console.error('Erreur lors de l\'ouverture du chat:', error);
+    alert('Impossible de démarrer le chat. Veuillez réessayer.');
+  } finally {
+    loadingAction.value = false;
+  }
+}
 
 // Actions
 const acceptApplication = async (applicationId) => {
@@ -537,6 +502,38 @@ h2 {
   font-weight: 600;
 }
 
+/* Style pour le bouton chat */
+.btn-chat {
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-chat:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.btn-chat:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-chat i {
+  font-size: 16px;
+}
+
 /* Section d'actions */
 .action-section {
   margin-top: 30px;
@@ -630,262 +627,6 @@ h2 {
   cursor: not-allowed;
 }
 
-/* Section candidatures */
-.applications-section {
-  margin-top: 40px;
-}
-
-/* Grille des candidatures */
-.applications-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 25px;
-}
-
-/* Carte candidature */
-.application-card {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-  border: 1px solid #e5e7eb;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.application-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-}
-
-.application-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 20px;
-}
-
-.freelancer-info {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.avatar-container {
-  flex-shrink: 0;
-}
-
-.avatar {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 2px solid #e5e7eb;
-}
-
-.freelancer-details h3 {
-  font-size: 18px;
-  color: #111827;
-  margin: 0 0 6px 0;
-  font-weight: 600;
-}
-
-.rating {
-  color: #f59e0b;
-  font-weight: 600;
-  margin: 0 0 6px 0;
-}
-
-.missions-count {
-  color: #6b7280;
-  font-weight: normal;
-}
-
-.skills {
-  color: #4b5563;
-  font-size: 14px;
-  margin: 0;
-}
-
-/* Badges */
-.badge {
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.badge.pending {
-  background-color: #fef3c7;
-  color: #d97706;
-  border: 1px solid #fcd34d;
-}
-
-.badge.accepted {
-  background-color: #d1fae5;
-  color: #065f46;
-  border: 1px solid #a7f3d0;
-}
-
-.badge.rejected {
-  background-color: #fee2e2;
-  color: #dc2626;
-  border: 1px solid #fca5a5;
-}
-
-.badge.cancelled {
-  background-color: #f3f4f6;
-  color: #6b7280;
-  border: 1px solid #d1d5db;
-}
-
-/* Contenu de la candidature */
-.application-content {
-  margin-bottom: 20px;
-}
-
-.bio, .proposal {
-  color: #4b5563;
-  font-size: 14px;
-  line-height: 1.6;
-  margin-bottom: 16px;
-}
-
-.proposal-section h4, .portfolio-section h4 {
-  font-size: 15px;
-  color: #111827;
-  margin-bottom: 8px;
-  font-weight: 600;
-}
-
-.portfolio-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.portfolio-list li {
-  padding: 8px 0;
-  border-bottom: 1px solid #f3f4f6;
-  color: #4b5563;
-  font-size: 14px;
-}
-
-.portfolio-list li:last-child {
-  border-bottom: none;
-}
-
-/* Boutons d'action de candidature */
-.application-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.profile-btn {
-  padding: 10px 16px;
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  transition: background-color 0.2s;
-  text-align: center;
-}
-
-.profile-btn:hover {
-  background: #e5e7eb;
-}
-
-.decision-buttons {
-  display: flex;
-  gap: 12px;
-}
-
-.accept-btn, .reject-btn {
-  flex: 1;
-  padding: 12px 16px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  transition: background-color 0.2s;
-}
-
-.accept-btn {
-  background: #10b981;
-  color: white;
-}
-
-.accept-btn:hover:not(:disabled) {
-  background: #059669;
-}
-
-.accept-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.reject-btn {
-  background: #ef4444;
-  color: white;
-}
-
-.reject-btn:hover:not(:disabled) {
-  background: #dc2626;
-}
-
-.reject-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* État vide */
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  background: #f9fafb;
-  border-radius: 12px;
-  border: 2px dashed #d1d5db;
-}
-
-.empty-icon {
-  font-size: 60px;
-  margin-bottom: 20px;
-  color: #9ca3af;
-}
-
-.empty-state h3 {
-  color: #111827;
-  margin-bottom: 12px;
-}
-
-.empty-state p {
-  color: #6b7280;
-  margin-bottom: 24px;
-  max-width: 400px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.refresh-btn {
-  padding: 12px 24px;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: background-color 0.2s;
-}
-
-.refresh-btn:hover {
-  background: #2563eb;
-}
-
 /* Messages d'état */
 .loading {
   text-align: center;
@@ -904,7 +645,7 @@ h2 {
   text-align: center;
 }
 
-.no-mission, .no-applications {
+.no-mission {
   text-align: center;
   padding: 60px 20px;
   color: #6b7280;
@@ -925,7 +666,7 @@ h2 {
   background: #2563eb;
 }
 
-/* Responsive */
+/* Adaptation des boutons pour mobile */
 @media (max-width: 768px) {
   .client-mission-details-page {
     margin-top: 80px;
@@ -946,22 +687,30 @@ h2 {
     gap: 10px;
   }
   
-  .applications-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .application-header {
-    flex-direction: column;
-    gap: 12px;
-  }
-  
-  .action-buttons, .decision-buttons {
+  .action-buttons {
     flex-direction: column;
   }
   
-  .btn-publish, .btn-edit, .btn-complete, .btn-cancel,
-  .accept-btn, .reject-btn {
+  .btn-chat,
+  .btn-publish, 
+  .btn-edit, 
+  .btn-complete, 
+  .btn-cancel {
     width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .client-mission-details-page {
+    padding: 0 12px;
+  }
+  
+  h1 {
+    font-size: 24px;
+  }
+  
+  .mission-card {
+    padding: 16px;
   }
 }
 </style>

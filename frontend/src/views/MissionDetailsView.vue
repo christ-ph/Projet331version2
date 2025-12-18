@@ -118,6 +118,16 @@
             <div v-else-if="alreadyApplied" class="status-message applied">
               <i class="fas fa-check-circle"></i>
               Vous avez déjà postulé
+              
+              <!-- Bouton pour ouvrir le chat si mission acceptée et en cours -->
+              <button 
+                v-if="isMissionInProgress && isFreelanceAccepted"
+                @click="openMissionChat"
+                class="chat-btn"
+              >
+                <i class="fas fa-comments"></i>
+                Ouvrir le chat
+              </button>
             </div>
 
             <!-- Bouton postuler -->
@@ -148,11 +158,13 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMissionStore } from '@/stores/missions'
 import { usePostulationStore } from '@/stores/postulations'
+import { useChatStore } from '@/stores/chat';
 
 const route = useRoute()
 const router = useRouter()
 const missionsStore = useMissionStore()
 const postulationsStore = usePostulationStore()
+const chatStore = useChatStore();
 
 const missionId = parseInt(route.params.id)
 const loading = ref(false)
@@ -179,6 +191,26 @@ const alreadyApplied = computed(() => {
     return false
   })
 })
+
+// Vérifier si la mission est en cours
+const isMissionInProgress = computed(() => {
+  return mission.value?.status === 'in_progress' || mission.value?.status === 'IN_PROGRESS';
+});
+
+// Vérifier si le freelance a été accepté pour cette mission
+const isFreelanceAccepted = computed(() => {
+  if (!postulationsStore.myApplications || postulationsStore.myApplications.length === 0) {
+    return false
+  }
+  
+  const myApplication = postulationsStore.myApplications.find(app => {
+    if (app.mission_id) return app.mission_id === missionId
+    if (app.mission && app.mission.id) return app.mission.id === missionId
+    return false
+  });
+  
+  return myApplication && myApplication.status === 'ACCEPTED';
+});
 
 // Charger les données
 onMounted(async () => {
@@ -207,6 +239,24 @@ async function loadMissionDetails() {
     loading.value = false
   }
 }
+
+// Ouvrir le chat de mission
+const openMissionChat = async () => {
+  try {
+    // Utiliser le store chat pour récupérer ou créer le chat
+    const chat = await chatStore.getOrCreateMissionChat(missionId);
+    
+    if (chat) {
+      // Naviguer vers la page de chat avec l'ID du chat
+      router.push(`/chat?chatId=${chat.id}`);
+    } else {
+      alert('Impossible de créer ou trouver le chat.');
+    }
+  } catch (error) {
+    console.error('Erreur lors de l\'ouverture du chat:', error);
+    alert('Impossible d\'ouvrir le chat. Veuillez réessayer.');
+  }
+};
 
 // Formatter la date
 function formatDate(dateString) {
@@ -262,11 +312,11 @@ async function applyToMission() {
   applying.value = true
   
   try {
-    // // Demander un message optionnel
-    const message = ' '
+    // Demander un message optionnel
+    const message = prompt('Voulez-vous ajouter un message à votre candidature ? (Optionnel)', '') || '';
     
     // Postuler
-    await postulationsStore.apply(missionId, message || '')
+    await postulationsStore.apply(missionId, message)
     
     // Recharger les données
     await postulationsStore.fetchMyApplications()
@@ -617,6 +667,7 @@ h3 i {
   font-weight: 600;
   text-align: center;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -634,6 +685,32 @@ h3 i {
 .status-message.closed {
   background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
   color: #991b1b;
+}
+
+/* Style pour le bouton chat dans le statut appliqué */
+.chat-btn {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  padding: 18px;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-decoration: none;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.chat-btn:hover {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.3);
 }
 
 .apply-btn {
@@ -718,6 +795,15 @@ h3 i {
   
   .content-wrapper {
     gap: 20px;
+  }
+  
+  .chat-btn {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+  
+  .status-message.applied {
+    padding: 16px;
   }
 }
 

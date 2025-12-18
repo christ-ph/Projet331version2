@@ -8,6 +8,7 @@ import RegisterView from '@/views/RegisterView.vue';
 import DashboardView from '@/views/DashboardView.vue';
 import MyDeliverablesView from '@/views/MyDeliverablesView.vue';
 import ManageDeliverablesView from '@/views/ManageDeliverablesView.vue';
+import ChatView from '@/views/ChatView.vue';
 
 
 // Vues Freelance
@@ -94,6 +95,17 @@ const routes = [
       requiresAuth: true, 
       title: 'Tableau de bord'
     }
+  },
+  // chat
+  {
+    path:'/chat/:id',
+    name:'chatView',
+    component:ChatView,
+    meta:{
+      requiresAuth:true,
+      title:'Messagerie'
+    }
+
   },
 
   // Routes Freelance
