@@ -26,6 +26,12 @@ import ManageApplicationsView from '@/views/ManageApplicationsView.vue';
 import ProfilesClient from '@/views/ProfilesClient.vue';
 
 
+// Vues Admin
+import AdminDashboardView from '@/views/admin/AdminDashboardView.vue';
+import AdminLoginView from '@/views/AdminLoginView.vue';
+import AdminRegisterFormView from '@/views/AdminRegisterFormView.vue';
+
+
 // Store Auth pour le guard
 import { useAuthStore } from '@/stores/auth';
 import { useProfileStore } from '@/stores/profile';
@@ -178,7 +184,34 @@ const routes = [
     component: ManageApplicationsView,
     meta: { requiresAuth: true, requiresRole: 'CLIENT' }
   },
-
+{
+  path: '/admin/dashboard',
+  name: 'AdminDashboard',
+  component: AdminDashboardView,
+  meta: { 
+    requiresAuth: true, 
+    requiresRole: 'ADMIN',
+    title: 'Tableau de bord Admin'
+  }
+},
+{
+  path: 'admin/login',
+  name: 'AdminLogin',
+  component: AdminLoginView,
+  meta: { 
+    requiresGuest: true,
+    title: 'Connexion Admin'
+  }
+},
+{
+  path: 'admin/register',
+  name: 'AdminRegister',
+  component: AdminRegisterFormView,
+  meta: { 
+    requiresGuest: true,
+    title: "Inscription Admin"
+  }
+},
   // Route 404
   {
     path: '/:catchAll(.*)',
