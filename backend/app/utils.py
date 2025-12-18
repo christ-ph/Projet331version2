@@ -73,3 +73,58 @@ def role_required(roles):
         
         return decorator
     return wrapper
+
+
+
+
+def is_active_required(fn):
+    """
+    Décorateur pour vérifier que le compte utilisateur est actif (non bloqué).
+    À utiliser APRÈS jwt_required() et role_required().
+    
+    Usage:
+        @jwt_required()
+        @role_required(['CLIENT', 'FREELANCE'])
+        @is_active_required
+        def ma_route():
+            pass
+    """
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            # Récupérer l'utilisateur depuis g (mis par role_required)
+            if hasattr(g, 'current_user'):
+                user = g.current_user
+            else:
+                # Fallback si role_required n'a pas été appelé avant
+                verify_jwt_in_request()
+                user_id_raw = get_jwt_identity()
+                
+                if not user_id_raw:
+                    return jsonify({"msg": "Token invalide ou expiré"}), 401
+                
+                try:
+                    user_id = int(user_id_raw)
+                except (TypeError, ValueError):
+                    return jsonify({"msg": "Format d'identifiant utilisateur invalide"}), 400
+                
+                user = db.session.get(User, user_id)
+            
+            if not user:
+                return jsonify({"msg": "Utilisateur non trouvé"}), 404
+            
+            # Vérifier si le compte est actif
+            if not user.is_active:
+                return jsonify({
+                    "msg": "Votre compte a été suspendu. Veuillez contacter le support à support@freelancecmr.com",
+                    "blocked": True
+                }), 403
+            
+            # Compte actif, continuer
+            return fn(*args, **kwargs)
+            
+        except Exception as e:
+            print(f"❌ ERROR dans is_active_required: {str(e)}")
+            return jsonify({"msg": "Erreur de vérification du compte"}), 500
+    
+    return wrapper

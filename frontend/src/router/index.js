@@ -6,13 +6,10 @@ import HomeView from '@/views/HomeView.vue';
 import LoginView from '@/views/LoginView.vue';
 import RegisterView from '@/views/RegisterView.vue';
 import DashboardView from '@/views/DashboardView.vue';
-<<<<<<< HEAD
 import MyDeliverablesView from '@/views/MyDeliverablesView.vue';
 import ManageDeliverablesView from '@/views/ManageDeliverablesView.vue';
 import ChatView from '@/views/ChatView.vue';
 
-=======
->>>>>>> 6a5d26e18890e20fc6efe05f547bdbab6ad8b388
 
 // Vues Freelance
 import AvailableMissionsView from '@/views/AvailableMissionView.vue';

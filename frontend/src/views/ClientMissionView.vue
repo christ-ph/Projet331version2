@@ -218,6 +218,7 @@
               >
                 <i class="fas fa-eye"></i> Voir détails
               </button>
+              <buttton v-if="mission.status === 'in_progress'"> message</buttton>
             </div>
 
             <div class="secondary-actions">
