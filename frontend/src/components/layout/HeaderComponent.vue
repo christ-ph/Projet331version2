@@ -27,6 +27,7 @@ const mainMenuItems = computed(() => {
       { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
       { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
       { label: "Mon Profil", icon: "fas fa-user-circle", path: "/freelance-profile", badge: null },
+      { label: "Plaintes", icon: "fas fa-exclamation-triangle", path: "/plainte", badge: null },
     ];
   }
 
@@ -39,6 +40,7 @@ const mainMenuItems = computed(() => {
       { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
       { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
       { label: "Mon Profil", icon: "fas fa-user-circle", path: "/client-profile", badge: null },
+      { label: "Plaintes", icon: "fas fa-exclamation-triangle", path: "/plainte", badge: null },
     ];
   }
 

@@ -9,6 +9,7 @@ import DashboardView from '@/views/DashboardView.vue';
 import MyDeliverablesView from '@/views/MyDeliverablesView.vue';
 import ManageDeliverablesView from '@/views/ManageDeliverablesView.vue';
 import ChatView from '@/views/ChatView.vue';
+import UserPlainteView from '@/views/User-plainteView.vue';
 
 
 // Vues Freelance
@@ -112,6 +113,15 @@ const routes = [
       requiresAuth: true, 
       requiresRole: 'FREELANCE', // ✅ NOUVEAU: plus spécifique
       title: 'Missions Disponibles'
+    }
+  },
+  {
+    path: '/plainte',
+    name: 'UserPlainte',
+    component: UserPlainteView,
+    meta: { 
+      requiresAuth: true, 
+      title: 'Plainte Utilisateur'
     }
   },
   {
