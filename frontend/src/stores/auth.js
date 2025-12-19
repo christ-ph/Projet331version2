@@ -202,6 +202,10 @@ export const useAuthStore = defineStore('auth', {
         this.isLoading = false
       }
     },
+    updateUser(data){
+      this.user = { ...this.user, ...data }
+      localStorage.setItem('user', JSON.stringify(this.user))
+    },
 
     /**
      * LOGOUT

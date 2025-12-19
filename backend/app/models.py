@@ -8,7 +8,18 @@ bcrypt = Bcrypt()
 # ============================
 # ENUMS
 # ============================
+class ComplaintStatus(enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
+class AdminActionType(enum.Enum):
+    APPROVE_COMPLAINT = "approve_complaint"
+    REJECT_COMPLAINT = "reject_complaint"
+    BLOCK_USER = "block_user"
+    UNBLOCK_USER = "unblock_user"
+
+    
 class MissionStatus(enum.Enum):
     DRAFT = "draft"         
     OPEN = "open"
@@ -75,6 +86,74 @@ class User(db.Model):
 
     def check_password(self, password):
         return bcrypt.check_password_hash(self.password_hash, password)
+
+# ============================
+# ACTION ACCOUNT (Plainte)
+# ============================
+
+class ActionAccount(db.Model):
+    __tablename__ = 'action_accounts'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    plaintiff_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    reported_email = db.Column(db.String(120), nullable=False)
+    reason = db.Column(db.Text, nullable=False)
+    status = db.Column(db.Enum(ComplaintStatus), default=ComplaintStatus.PENDING, nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    
+    # Relations
+    plaintiff = db.relationship('User', foreign_keys=[plaintiff_id], backref='filed_complaints')
+    reviewer = db.relationship('User', foreign_keys=[reviewed_by], backref='reviewed_complaints')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'plaintiff_id': self.plaintiff_id,
+            'plaintiff_email': self.plaintiff.email if self.plaintiff else None,
+            'reported_email': self.reported_email,
+            'reason': self.reason,
+            'status': self.status.value,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'reviewed_by': self.reviewed_by
+        }
+
+# ============================
+# ADMIN ACTION (Historique)
+# ============================
+
+class AdminAction(db.Model):
+    __tablename__ = 'admin_actions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    admin_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    action_type = db.Column(db.Enum(AdminActionType), nullable=False)
+    target_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    action_account_id = db.Column(db.Integer, db.ForeignKey('action_accounts.id'), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    
+    # Relations
+    admin = db.relationship('User', foreign_keys=[admin_id], backref='admin_actions')
+    target_user = db.relationship('User', foreign_keys=[target_user_id], backref='actions_received')
+    action_account = db.relationship('ActionAccount', backref='admin_actions')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'admin_id': self.admin_id,
+            'admin_email': self.admin.email if self.admin else None,
+            'action_type': self.action_type.value,
+            'target_user_id': self.target_user_id,
+            'target_user_email': self.target_user.email if self.target_user else None,
+            'action_account_id': self.action_account_id,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
 
 # ============================
 # CHAT (Ajouté)

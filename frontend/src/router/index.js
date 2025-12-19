@@ -11,6 +11,7 @@ import ManageDeliverablesView from '@/views/ManageDeliverablesView.vue';
 import ChatView from '@/views/ChatView.vue';
 import ChatModal from '@/components/chats/ChatButton.vue';
 import CreateChatModal from '@/views/CreateChatModal.vue';
+import UserPlainteView from '@/views/User-plainteView.vue';
 
 
 // Vues Freelance
@@ -30,6 +31,14 @@ import ProfilesClient from '@/views/ProfilesClient.vue';
 import ManageDeliverablesClientView from '@/views/ManageDeliverablesClientView.vue';
 import MissionFinView from '@/views/MissionFinView.vue';
 
+
+// Vues Admin
+
+import AdminDashboardView from '@/views/AdminDashboardView.vue';
+import AdminLoginView from '@/views/AdminLoginView.vue';
+import AdminRegisterFormView from '@/views/AdminRegisterFormView.vue';
+
+
 // Store Auth pour le guard
 import { useAuthStore } from '@/stores/auth';
 import { useProfileStore } from '@/stores/profile';
@@ -37,6 +46,23 @@ import { useProfileStore } from '@/stores/profile';
 
 const routes = [
   // Routes publiques
+  {path: '/admin/dashboard',
+    name: 'AdminDashboard',
+    component: AdminDashboardView,
+    meta: {title: 'Admin - Tableau de bord'}
+  },
+  {
+    path: '/admin/login',
+    name: 'AdminLogin',
+    component: AdminLoginView,
+    meta: {title: 'Admin - Connexion'}
+  },
+  {
+    path: '/admin/register',
+    name: 'AdminRegister',
+    component: AdminRegisterFormView,
+    meta: {title: 'Admin - Inscription'}
+  },
   { 
     path: '/', 
     name: 'Home', 
@@ -127,6 +153,15 @@ const routes = [
       requiresAuth: true, 
       requiresRole: 'FREELANCE', // ✅ NOUVEAU: plus spécifique
       title: 'Missions Disponibles'
+    }
+  },
+   {
+    path: '/plainte',
+    name: 'UserPlainte',
+    component: UserPlainteView,
+    meta: { 
+      requiresAuth: true, 
+      title: 'Plainte Utilisateur'
     }
   },
   {

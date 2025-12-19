@@ -3,7 +3,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from app import db, mail # On importe db pour les sessions et les commits
 from app.models import User, Role
 from sqlalchemy import select # Import nécessaire pour la syntaxe moderne de requête
-from app.utils import role_required
+from app.utils import role_required ,is_active_required 
 from datetime import datetime, timedelta
 from flask_mail import Message
 import random
@@ -35,6 +35,7 @@ def send_verification_email(email, code):
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
+    print(data)
     email = data.get('email')
     password = data.get('password')
 
@@ -43,7 +44,11 @@ def register():
 
     # Vérifier si l'utilisateur existe déjà
     stmt = select(User).filter_by(email=email)
-    if db.session.execute(stmt).scalars().first():
+    user = db.session.execute(stmt).scalars().first()
+    if user and not user.is_verified and user.reset_token_expiration > datetime.utcnow():
+        db.session.delete(user)
+        db.session.commit()
+    elif user:
         return jsonify({"msg": "L'utilisateur existe déjà."}), 409
 
     # Rôle par défaut
@@ -152,6 +157,7 @@ def resend_code():
 # ============================
 
 @auth_bp.route('/login', methods=['POST'])
+
 def login():
     data = request.get_json()
     email = data.get('email')
@@ -167,8 +173,14 @@ def login():
         return jsonify({"msg": "Email ou mot de passe invalide."}), 401
 
     if not user.is_verified:
+        if user.reset_token_expiration < datetime.utcnow():
+            db.session.delete(user)
+            db.session.commit()
+            return jsonify({"msg": "Compte non vérifié et code expiré. Le compte a été supprimé. Veuillez vous réinscrire."}), 410
         return jsonify({"msg": "Veuillez vérifier votre email avant de vous connecter."}), 403
 
+    if not user.is_active:
+        return jsonify({"msg": "Compte désactivé. Contactez l'administrateur."}), 403
     access_token = create_access_token(identity=str(user.id))
 
     user.last_connection_at = datetime.utcnow()

@@ -40,8 +40,12 @@ const register = async () => {
   }
 
   try {
-    await authStore.register(form.value.email, form.value.password);
-
+    const result = await authStore.register({email:form.value.email, password:form.value.password});
+    if(!result.success){
+      const msg = result.message || "Erreur lors de l'inscription";
+      errorMessage.value = msg;
+      return;
+    }
     successMessage.value = "Compte créé ! Un code de vérification vous a été envoyé.";
     showOtp.value = true;
 
@@ -56,8 +60,12 @@ const verify = async () => {
   errorMessage.value = '';
 
   try {
-    await authStore.verifyEmail(form.value.email, otp.value);
-
+    const result = await authStore.verifyEmail( form.value.email, otp.value);
+    if(!result.success){
+      const msg = result.message || "Code invalide";
+    errorMessage.value = msg;
+    return;
+    }
     otpMessage.value = "Email vérifié avec succès ! Redirection...";
 
     setTimeout(() => {
