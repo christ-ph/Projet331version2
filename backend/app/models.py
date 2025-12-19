@@ -130,12 +130,16 @@ class Chat(db.Model):
     
     def get_notification_count(self, user_id, user_role):
         """Retourne le compteur de notifications pour cet utilisateur"""
+        # Pour les admins
         if user_role == 'ADMIN':
             return self.notification_admin
-        elif self.user1_id == user_id:
+        
+        # Pour les participants
+        if self.user1_id == user_id:
             return self.notification_user1
         elif self.user2_id == user_id:
             return self.notification_user2
+        
         return 0
     
     def to_dict(self):

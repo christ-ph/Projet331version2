@@ -103,6 +103,21 @@
               <i class="fas fa-file-upload"></i>
               Créer livrable
             </button>
+            
+            <!-- Bouton de chat si mission acceptée -->
+            <button
+              v-if="app.status === 'accepted' && app.mission?.status === 'in_progress'"
+              class="btn-chat"
+              @click="openMissionChat(app.mission)"
+              :disabled="actionLoading"
+              :title="hasUnreadChatMessages(app.mission) ? 'Nouveaux messages disponibles' : 'Ouvrir la conversation'"
+            >
+              <i class="fas fa-comments"></i>
+              <span>Messages</span>
+              <span v-if="hasUnreadChatMessages(app.mission)" class="unread-chat-count">
+                {{ getUnreadChatCount(app.mission) }}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -251,30 +266,44 @@
         </div>
       </div>
     </div>
+
+    <!-- Chat Modal -->
+    <ChatModal 
+      :is-open="isChatModalOpen" 
+      @close="closeChatModal"
+      @open-support="openSupportChat"
+    />
   </div>
 </template>
 
+
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePostulationStore } from '@/stores/postulations'
-import { useMissionStore } from '@/stores/missions'
 import { useDeliverablesStore } from '@/stores/deliverables'
+import { useChatStore } from '@/stores/chat'
 import DeliverableForm from '@/components/deliverables/DeliverableForm.vue'
+import ChatModal from '@/components/chats/ChatModal.vue'
 
 const router = useRouter()
 const postulationsStore = usePostulationStore()
-const missionsStore = useMissionStore()
 const deliverablesStore = useDeliverablesStore()
+const chatStore = useChatStore()
 
-// États
+// =======================
+// STATE
+// =======================
 const statusFilter = ref('')
 const cancellingApp = ref(null)
 const showDeliverableModal = ref(false)
 const selectedMissionId = ref(null)
 const selectedMissionTitle = ref('')
+const actionLoading = ref(false)
 
-// Filtres de statut
+// =======================
+// CONSTANTES
+// =======================
 const statusFilters = [
   { value: '', label: 'Toutes' },
   { value: 'pending', label: 'En attente' },
@@ -283,270 +312,511 @@ const statusFilters = [
   { value: 'cancelled', label: 'Annulées' }
 ]
 
-// Chargement initial
+// =======================
+// LIFECYCLE
+// =======================
 onMounted(async () => {
-  console.log('📱 Composant MyApplications monté')
-  await loadData()
+  try {
+    await Promise.all([
+      postulationsStore.fetchMyApplications(),
+      chatStore.fetchMyChats()
+    ])
+    chatStore.startPolling()
+  } catch (error) {
+    console.error("Erreur lors de l'initialisation des données:", error)
+  }
 })
 
-const loadData = async () => {
-  console.log('📱 Chargement des candidatures...')
+onUnmounted(() => {
+  chatStore.stopPolling()
+})
+
+// =======================
+// CHAT MODAL & ACTIONS
+// =======================
+const isChatModalOpen = computed(() => chatStore.isChatModalOpen)
+const closeChatModal = () => chatStore.closeChatModal()
+
+/**
+ * ✅ Correction du warning : Cette fonction doit exister car elle est 
+ * appelée par @open-support="openSupportChat" dans le template
+ */
+const openSupportChat = async () => {
   try {
-    await postulationsStore.fetchMyApplications()
-    console.log('📱 Candidatures chargées:', postulationsStore.myApplications)
+    actionLoading.value = true
+    await chatStore.openSupportChat()
   } catch (error) {
-    console.error('❌ Erreur chargement candidatures:', error)
+    console.error("Impossible d'ouvrir le support:", error)
+  } finally {
+    actionLoading.value = false
   }
 }
 
-// Candidatures filtrées
-const filteredApplications = computed(() => {
-  if (!postulationsStore.myApplications || postulationsStore.myApplications.length === 0) {
-    console.log('📱 Aucune candidature à filtrer')
-    return []
+const hasUnreadChatMessages = (mission) => {
+  const mId = mission?.id || mission?._id
+  if (!mId) return false
+  return chatStore.hasUnreadMissionMessages(mId)
+}
+
+const getUnreadChatCount = (mission) => {
+  const mId = mission?.id || mission?._id
+  if (!mId) return 0
+  return chatStore.getMissionChat(mId)?.unread_count || 0
+}
+
+/**
+ * ✅ Correction de la redirection : On force la récupération du chat de mission
+ * avant de l'activer pour éviter de tomber sur le support par défaut.
+ */
+const openMissionChat = async (mission) => {
+  const mId = mission?.id || mission?._id
+  if (!mId) return
+  
+  actionLoading.value = true
+  try {
+    // 1. Récupère ou crée spécifiquement le chat lié à la mission
+    const chat = await chatStore.getOrCreateMissionChat(mId)
+    
+    // 2. Définit ce chat comme étant le chat actif
+    if (chat) {
+      await chatStore.setActiveChat(chat)
+    }
+  } catch (error) {
+    console.error("Erreur lors de l'ouverture du chat mission:", error)
+  } finally {
+    actionLoading.value = false
   }
-  
-  let apps = postulationsStore.myApplications
-  
-  // Filtrer par statut
+}
+
+// =======================
+// COMPUTED (Filtrage)
+// =======================
+const filteredApplications = computed(() => {
+  let apps = postulationsStore.myApplications || []
   if (statusFilter.value) {
     apps = apps.filter(app => app.status === statusFilter.value)
   }
-  
-  // Trier par date (plus récent d'abord)
-  apps.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-  
-  console.log('📱 Candidatures filtrées:', apps.length)
-  return apps
+  return [...apps].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 })
 
-// Statistiques par statut
-const statusStats = computed(() => {
-  const stats = []
-  
-  statusFilters.forEach(filter => {
-    if (filter.value) {
-      stats.push({
-        status: filter.value,
-        count: getCountByStatus(filter.value),
-        label: filter.label
-      })
-    }
-  })
-  
-  return stats
-})
+const statusStats = computed(() =>
+  statusFilters
+    .filter(f => f.value)
+    .map(f => ({
+      status: f.value,
+      label: f.label,
+      count: getCountByStatus(f.value)
+    }))
+)
 
-// Compter par statut
-const getCountByStatus = (status) => {
-  if (!postulationsStore.myApplications || postulationsStore.myApplications.length === 0) {
-    return 0
-  }
-  
-  if (status === '') {
-    return postulationsStore.myApplications.length
-  }
-  
-  return postulationsStore.myApplications.filter(app => app.status === status).length
+// =======================
+// HELPERS (Formatage & UI)
+// =======================
+const getCountByStatus = (status) =>
+  (postulationsStore.myApplications || []).filter(a =>
+    status ? a.status === status : true
+  ).length
+
+const getMissionId = (app) => app?.mission_id || app?.mission?.id || null
+const getMissionTitle = (app) => app?.mission?.title || 'Mission non trouvée'
+const getMissionBudget = (app) => app?.mission?.budget ? `${app.mission.budget} €` : 'Budget non spécifié'
+const getMissionDeadline = (app) => app?.mission?.deadline || null
+const getMissionSkills = (app) => Array.isArray(app?.mission?.required_skills) ? app.mission.required_skills : []
+
+const getMissionStatusLabel = (status) => ({
+  draft: 'Brouillon', open: 'Publiée', in_progress: 'En cours', completed: 'Terminée', cancelled: 'Annulée'
+}[status] || status)
+
+const getStatusLabel = (status) => ({
+  pending: 'En attente', accepted: 'Acceptée', rejected: 'Rejetée', cancelled: 'Annulée'
+}[status] || status)
+
+const getStatusIcon = (status) => ({
+  pending: 'fas fa-hourglass-half', accepted: 'fas fa-check-circle', rejected: 'fas fa-times-circle', cancelled: 'fas fa-ban'
+}[status] || 'fas fa-question-circle')
+
+const formatDate = (date) => date ? new Date(date).toLocaleDateString('fr-FR') : ''
+const getClientInfo = (app) => !!app?.client
+const getClientName = (app) => app?.client?.fullname || app?.client?.company_name || app?.client?.username || 'Client'
+const getClientRating = (app) => app?.client?.rating || null
+
+// =======================
+// ACTIONS (Boutons)
+// =======================
+const setStatusFilter = (status) => { statusFilter.value = status }
+const viewMission = (missionId) => { if (missionId) router.push(`/missions/${missionId}`) }
+const viewMissionDeliverables = (missionId) => { if (missionId) router.push(`/missions/${missionId}/deliverables`) }
+
+const reload = async () => {
+  statusFilter.value = ''
+  actionLoading.value = true
+  await Promise.all([
+    postulationsStore.fetchMyApplications(),
+    chatStore.fetchMyChats()
+  ])
+  actionLoading.value = false
 }
 
-// ======================
-// FONCTIONS D'ACCÈS AUX DONNÉES
-// ======================
-
-// Obtenir l'ID de la mission (support plusieurs formats)
-const getMissionId = (app) => {
-  if (app.mission_id) return app.mission_id
-  if (app.mission?.id) return app.mission.id
-  return null
-}
-
-// Obtenir le titre de la mission
-const getMissionTitle = (app) => {
-  if (app.mission?.title) return app.mission.title
-  return 'Mission non trouvée'
-}
-
-// Obtenir le budget de la mission
-const getMissionBudget = (app) => {
-  const budget = app.mission?.budget
-  if (budget !== undefined && budget !== null) {
-    return budget + ' €'
-  }
-  return 'Budget non spécifié'
-}
-
-// Obtenir la date limite
-const getMissionDeadline = (app) => {
-  return app.mission?.deadline || null
-}
-
-// Obtenir les compétences
-const getMissionSkills = (app) => {
-  return app.mission?.required_skills || []
-}
-
-// Obtenir le statut de la mission formaté
-const getMissionStatusLabel = (status) => {
-  const labels = {
-    'draft': 'Brouillon',
-    'open': 'Publiée',
-    'in_progress': 'En cours',
-    'completed': 'Terminée',
-    'cancelled': 'Annulée'
-  }
-  return labels[status] || status
-}
-
-// Obtenir les infos client
-const getClientInfo = (app) => {
-  return app.client || null
-}
-
-// Obtenir le nom du client
-const getClientName = (app) => {
-  if (!app.client) return 'Client'
-  
-  if (app.client.fullname) return app.client.fullname
-  if (app.client.company_name) return app.client.company_name
-  if (app.client.username) return app.client.username
-  
-  return 'Client'
-}
-
-// Obtenir la note du client
-const getClientRating = (app) => {
-  return app.client?.rating || null
-}
-
-// Obtenir l'icône du statut
-const getStatusIcon = (status) => {
-  const icons = {
-    'pending': 'fas fa-hourglass-half',
-    'accepted': 'fas fa-check-circle',
-    'rejected': 'fas fa-times-circle',
-    'cancelled': 'fas fa-ban'
-  }
-  return icons[status] || 'fas fa-question-circle'
-}
-
-// Obtenir le label du statut
-const getStatusLabel = (status) => {
-  const labels = {
-    'pending': 'En attente',
-    'accepted': 'Acceptée',
-    'rejected': 'Rejetée',
-    'cancelled': 'Annulée'
-  }
-  return labels[status] || status
-}
-
-// Formater la date
-const formatDate = (dateString) => {
-  if (!dateString) return ''
-  try {
-    return new Date(dateString).toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    })
-  } catch (e) {
-    return dateString
-  }
-}
-
-// Définir le filtre de statut
-const setStatusFilter = (status) => {
-  statusFilter.value = status
-}
-
-// Voir la mission
-const viewMission = (missionId) => {
-  if (missionId) {
-    router.push(`/missions/${missionId}`)
-  } else {
-    alert('ID de mission non disponible')
-  }
-}
-
-// Voir les livrables de la mission
-const viewMissionDeliverables = (missionId) => {
-  if (missionId) {
-    router.push(`/missions/${missionId}/deliverables`)
-  }
-}
-
-// Créer un livrable pour une mission acceptée
-const createDeliverableForMission = (app) => {
-  const missionId = getMissionId(app)
-  const missionTitle = getMissionTitle(app)
-  
-  if (missionId) {
-    selectedMissionId.value = missionId
-    selectedMissionTitle.value = missionTitle
-    showDeliverableModal.value = true
-  } else {
-    alert('Impossible de créer un livrable: mission non trouvée')
-  }
-}
-
-// Gérer la création de livrable
-const handleDeliverableSubmit = async (formData) => {
-  try {
-    await deliverablesStore.createDeliverable(formData)
-    
-    // Fermer le modal
-    closeDeliverableModal()
-    
-    // Feedback
-    alert('✅ Livrable créé avec succès !')
-    
-    // Rediriger vers la page des livrables de la mission
-    if (selectedMissionId.value) {
-      router.push(`/missions/${selectedMissionId.value}/deliverables`)
-    }
-  } catch (error) {
-    console.error('Erreur création livrable:', error)
-    alert(error.response?.data?.error || 'Erreur lors de la création du livrable')
-  }
-}
-
-// Fermer le modal de création de livrable
-const closeDeliverableModal = () => {
-  showDeliverableModal.value = false
-  selectedMissionId.value = null
-  selectedMissionTitle.value = ''
-}
-
-// Annuler une candidature
 const cancelApplication = async (appId) => {
-  if (!confirm('Voulez-vous vraiment annuler cette candidature ?')) return
-  
+  if (!confirm('Annuler cette candidature ?')) return
   cancellingApp.value = appId
-  
   try {
-    // À implémenter dans votre backend
     await postulationsStore.cancelApplication(appId)
-    await loadData() // Recharger après annulation
-    
-    alert('✅ Candidature annulée avec succès')
-  } catch (error) {
-    console.error('Erreur annulation:', error)
-    alert(error.response?.data?.error || 'Erreur lors de l\'annulation')
+    await postulationsStore.fetchMyApplications()
   } finally {
     cancellingApp.value = null
   }
 }
 
-// Recharger
-const reload = () => {
-  statusFilter.value = ''
-  loadData()
+// =======================
+// DELIVERABLES
+// =======================
+const createDeliverableForMission = (app) => {
+  selectedMissionId.value = getMissionId(app)
+  selectedMissionTitle.value = getMissionTitle(app)
+  showDeliverableModal.value = true
+}
+
+const closeDeliverableModal = () => {
+  showDeliverableModal.value = false
+  selectedMissionId.value = null
+}
+
+const handleDeliverableSubmit = async (formData) => {
+  try {
+    await deliverablesStore.createDeliverable(formData)
+    closeDeliverableModal()
+    router.push(`/missions/${selectedMissionId.value}/deliverables`)
+  } catch (error) {
+    console.error("Erreur création livrable:", error)
+  }
 }
 </script>
 
+
 <style scoped>
 /* =========================
+   STYLES POUR LE CHAT MODAL (AJOUTÉS)
+========================= */
+.chat-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.3s ease;
+}
+
+.chat-modal {
+  background: white;
+  border-radius: 20px;
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 2px solid #e5e7eb;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.modal-body {
+  padding: 40px 20px;
+}
+
+.chat-placeholder {
+  text-align: center;
+}
+
+.placeholder-icon {
+  color: #cbd5e1;
+  margin-bottom: 20px;
+}
+
+.placeholder-icon i {
+  opacity: 0.5;
+}
+
+.chat-placeholder h4 {
+  font-size: 24px;
+  color: #1e293b;
+  margin-bottom: 10px;
+}
+
+.chat-placeholder p {
+  color: #64748b;
+  font-size: 16px;
+  margin-bottom: 30px;
+  line-height: 1.6;
+}
+
+.placeholder-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn-support {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.btn-support:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3);
+}
+
+.btn-close {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 2px solid #e2e8f0;
+  padding: 12px 24px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.btn-close:hover {
+  background: #e2e8f0;
+  transform: translateY(-2px);
+}
+
+/* =========================
+   STYLES POUR LE BOUTON CHAT DANS LA CARTE
+========================= */
+.btn-chat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+}
+
+.btn-chat:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+}
+
+.btn-chat:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.unread-chat-count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #ef4444;
+  color: white;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* =========================
+   AJOUTER AUX BOUTONS D'ACTION EXISTANTS
+========================= */
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cancel-btn {
+  padding: 8px 16px;
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s ease;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background: #fee2e2;
+  transform: translateY(-1px);
+}
+
+.cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.create-deliverable-btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+}
+
+.create-deliverable-btn:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+/* =========================
+   RESPONSIVE POUR LES NOUVEAUX BOUTONS
+========================= */
+@media (max-width: 768px) {
+  .action-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .cancel-btn,
+  .create-deliverable-btn,
+  .btn-chat {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .chat-modal {
+    width: 95%;
+    margin: 0 10px;
+  }
+  
+  .modal-body {
+    padding: 30px 15px;
+  }
+  
+  .placeholder-actions {
+    flex-direction: column;
+  }
+  
+  .btn-support,
+  .btn-close {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .application-card {
+    padding: 20px;
+  }
+  
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .action-buttons {
+    margin-top: 15px;
+    width: 100%;
+  }
+}
+
+/*===================
    PAGE
 ========================= */
 .my-applications-page {

@@ -11,6 +11,11 @@ chat_bp = Blueprint('chat_bp', __name__)
 # 1. CRÉER OU RÉCUPÉRER UN CHAT DE MISSION
 # ============================
 
+from sqlalchemy import select
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask import jsonify
+from app.models import db, User, Mission, Chat, ChatType, Postulation, PostulationStatus
+
 @chat_bp.route('/mission/<int:mission_id>', methods=['GET'])
 @jwt_required()
 def get_or_create_mission_chat(mission_id):
@@ -27,19 +32,40 @@ def get_or_create_mission_chat(mission_id):
         if not mission:
             return jsonify({"error": "Mission introuvable"}), 404
         
-        # Vérifier les permissions
+        # VÉRIFICATION SIMPLIFIÉE DES PERMISSIONS
         can_access = False
-        if user.role.name == 'CLIENT' and mission.client_id == user_id:
+        user_role = user.role.name
+        
+        if user_role == 'CLIENT' and mission.client_id == user_id:
             can_access = True
-        elif user.role.name == 'FREELANCE' and mission.assigned_freelance_id == user_id:
-            can_access = True
-        elif user.role.name == 'ADMIN':
+        elif user_role == 'FREELANCE':
+            # Vérifier si le freelance est assigné
+            if mission.assigned_freelance_id == user_id:
+                can_access = True
+            else:
+                # Vérifier les candidatures acceptées
+                accepted_application = db.session.execute(
+                    select(Postulation).filter(
+                        Postulation.mission_id == mission_id,
+                        Postulation.freelance_id == user_id,
+                        Postulation.status == PostulationStatus.ACCEPTED
+                    )
+                ).scalars().first()
+                
+                if accepted_application:
+                    can_access = True
+                    # CORRECTION IMPORTANTE : Mettre à jour le freelance assigné
+                    mission.assigned_freelance_id = user_id
+                    db.session.commit()
+        elif user_role == 'ADMIN':
             can_access = True
         
         if not can_access:
-            return jsonify({"error": "Accès non autorisé à cette mission"}), 403
+            return jsonify({
+                "error": "Accès non autorisé à cette mission."
+            }), 403
         
-        # Chercher le chat existant
+        # Chercher ou créer le chat
         chat = db.session.execute(
             select(Chat).filter_by(
                 mission_id=mission_id, 
@@ -48,53 +74,58 @@ def get_or_create_mission_chat(mission_id):
         ).scalars().first()
         
         if not chat:
-            # Créer le chat avec les bons participants
+            # Créer le chat
             chat = Chat(
                 chat_type=ChatType.MISSION,
-                user1_id=mission.client_id,  # Client
-                user2_id=mission.assigned_freelance_id,  # Freelance assigné
+                user1_id=mission.client_id,
+                user2_id=mission.assigned_freelance_id,  # Peut être NULL
                 mission_id=mission_id
             )
             db.session.add(chat)
             db.session.commit()
+        else:
+            # CORRECTION : Mettre à jour le user2_id si un freelance a été assigné
+            if chat.user2_id != mission.assigned_freelance_id:
+                chat.user2_id = mission.assigned_freelance_id
+                db.session.commit()
         
-        # Récupérer les infos complémentaires
-        client = db.session.get(User, chat.user1_id) if chat.user1_id else None
-        freelance = db.session.get(User, chat.user2_id) if chat.user2_id else None
-        
+        # Version simplifiée sans profils
         chat_data = chat.to_dict()
-        
-        # Ajouter les infos utilisateurs
-        chat_data['client'] = {
-            'id': client.id if client else None,
-            'email': client.email if client else None,
-            'role': client.role.name if client else None
-        } if client else None
-        
-        chat_data['freelance'] = {
-            'id': freelance.id if freelance else None,
-            'email': freelance.email if freelance else None,
-            'role': freelance.role.name if freelance else None
-        } if freelance else None
-        
-        # Ajouter les infos mission
         chat_data['mission'] = {
             'id': mission.id,
             'title': mission.title,
             'status': mission.status.value,
-            'budget': mission.budget,
-            'client_id': mission.client_id,
-            'freelance_id': mission.assigned_freelance_id
+            'assigned_freelance_id': mission.assigned_freelance_id
         }
         
-        # Notifications pour cet utilisateur
-        chat_data['unread_count'] = chat.get_notification_count(user_id, user.role.name)
+        # Déterminer l'autre participant
+        if user_role == 'CLIENT' and chat.user2_id:
+            other_user = db.session.get(User, chat.user2_id)
+            chat_data['other_participant'] = {
+                'id': other_user.id,
+                'email': other_user.email,
+                'role': other_user.role.name
+            }
+        elif user_role == 'FREELANCE' and chat.user1_id:
+            other_user = db.session.get(User, chat.user1_id)
+            chat_data['other_participant'] = {
+                'id': other_user.id,
+                'email': other_user.email,
+                'role': other_user.role.name
+            }
+        else:
+            chat_data['other_participant'] = None
+        
+        chat_data['unread_count'] = chat.get_notification_count(user_id, user_role)
         
         return jsonify({"chat": chat_data}), 200
         
     except Exception as e:
+        db.session.rollback()
+        print(f"Erreur get_or_create_mission_chat: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": f"Erreur serveur: {str(e)}"}), 500
-
 # ============================
 # 2. GÉRER LE CHAT DE SUPPORT
 # ============================
@@ -265,10 +296,20 @@ def get_messages(chat_id):
         if not chat:
             return jsonify({"error": "Chat introuvable"}), 404
         
-        # Vérifier accès
+        # Vérifier accès - CORRIGÉ POUR GÉRER LES NULL
         if chat.chat_type == ChatType.MISSION:
-            if user_id not in [chat.user1_id, chat.user2_id]:
-                return jsonify({"error": "Accès refusé"}), 403
+            # CORRECTION : Vérifier les IDs non-nulls uniquement
+            participant_ids = []
+            if chat.user1_id:
+                participant_ids.append(chat.user1_id)
+            if chat.user2_id:
+                participant_ids.append(chat.user2_id)
+            
+            if user_id not in participant_ids:
+                # Admins peuvent aussi voir les chats mission
+                if user.role.name != 'ADMIN':
+                    return jsonify({"error": "Accès refusé"}), 403
+        
         elif chat.chat_type == ChatType.SUPPORT:
             if user_id != chat.user1_id and user.role.name != 'ADMIN':
                 return jsonify({"error": "Accès refusé"}), 403
@@ -315,7 +356,6 @@ def get_messages(chat_id):
         
     except Exception as e:
         return jsonify({"error": f"Erreur serveur: {str(e)}"}), 500
-
 # ============================
 # 5. CHECK STATUS (polling pour notifications)
 # ============================
@@ -645,4 +685,80 @@ def get_chat(chat_id):
         return jsonify({"chat": chat_data}), 200
         
     except Exception as e:
+        return jsonify({"error": f"Erreur serveur: {str(e)}"}), 500
+    
+
+@chat_bp.route('/mission/<int:mission_id>/assign-freelance', methods=['POST'])
+@jwt_required()
+def assign_freelance_to_chat(mission_id):
+    """Assigne un freelance au chat de mission (quand sa candidature est acceptée)"""
+    try:
+        user_id = int(get_jwt_identity())
+        user = db.session.get(User, user_id)
+        
+        if not user or user.role.name != 'CLIENT':
+            return jsonify({"error": "Accès non autorisé"}), 403
+        
+        # Récupérer la mission
+        mission = db.session.get(Mission, mission_id)
+        if not mission or mission.client_id != user_id:
+            return jsonify({"error": "Mission introuvable ou accès refusé"}), 404
+        
+        data = request.get_json()
+        freelance_id = data.get('freelance_id')
+        
+        if not freelance_id:
+            return jsonify({"error": "ID du freelance requis"}), 400
+        
+        # Vérifier que la candidature existe et est acceptée
+        accepted_application = db.session.execute(
+            select(Postulation).filter(
+                Postulation.mission_id == mission_id,
+                Postulation.freelance_id == freelance_id,
+                Postulation.status == PostulationStatus.ACCEPTED
+            )
+        ).scalars().first()
+        
+        if not accepted_application:
+            return jsonify({"error": "Candidature acceptée non trouvée"}), 400
+        
+        # Mettre à jour la mission
+        mission.assigned_freelance_id = freelance_id
+        mission.status = MissionStatus.IN_PROGRESS
+        
+        # Chercher le chat existant
+        chat = db.session.execute(
+            select(Chat).filter_by(
+                mission_id=mission_id,
+                chat_type=ChatType.MISSION
+            )
+        ).scalars().first()
+        
+        if chat:
+            # Mettre à jour le chat
+            chat.user2_id = freelance_id
+        else:
+            # Créer un nouveau chat
+            chat = Chat(
+                chat_type=ChatType.MISSION,
+                user1_id=mission.client_id,
+                user2_id=freelance_id,
+                mission_id=mission_id
+            )
+            db.session.add(chat)
+        
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Freelance assigné avec succès",
+            "chat": chat.to_dict(),
+            "mission": {
+                'id': mission.id,
+                'assigned_freelance_id': mission.assigned_freelance_id,
+                'status': mission.status.value
+            }
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
         return jsonify({"error": f"Erreur serveur: {str(e)}"}), 500
