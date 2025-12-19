@@ -208,7 +208,7 @@ def approve_complaint(complaint_id):
     
     # Bloquer l'utilisateur
     reported_user.is_active = False
-    
+    db.session.commit()
     # Mettre à jour la plainte
     current_admin = g.current_user
     complaint.status = ComplaintStatus.APPROVED

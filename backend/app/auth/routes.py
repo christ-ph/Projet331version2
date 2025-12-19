@@ -173,8 +173,14 @@ def login():
         return jsonify({"msg": "Email ou mot de passe invalide."}), 401
 
     if not user.is_verified:
+        if user.reset_token_expiration < datetime.utcnow():
+            db.session.delete(user)
+            db.session.commit()
+            return jsonify({"msg": "Compte non vérifié et code expiré. Le compte a été supprimé. Veuillez vous réinscrire."}), 410
         return jsonify({"msg": "Veuillez vérifier votre email avant de vous connecter."}), 403
 
+    if not user.is_active:
+        return jsonify({"msg": "Compte désactivé. Contactez l'administrateur."}), 403
     access_token = create_access_token(identity=str(user.id))
 
     user.last_connection_at = datetime.utcnow()
