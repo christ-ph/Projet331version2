@@ -39,7 +39,7 @@ def create_app():
     app.register_blueprint(profile_bp, url_prefix='/api/profiles')
     app.register_blueprint(missions_bp , url_prefix='/api/missions')
     from app.admin.routes import admin_bp
-    app.register_blueprint(admin_bp, url_prefix='/api/admin')
+    app.register_blueprint(admin_bp, url_prefix='/admin')
 
     # from app.chats.routes import chat_bp
     # app.register_blueprint(chat_bp) 
