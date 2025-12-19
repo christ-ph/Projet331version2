@@ -9,9 +9,10 @@ import DashboardView from '@/views/DashboardView.vue';
 import MyDeliverablesView from '@/views/MyDeliverablesView.vue';
 import ManageDeliverablesView from '@/views/ManageDeliverablesView.vue';
 import ChatView from '@/views/ChatView.vue';
-import ChatModal from '@/components/chats/ChatButton.vue';
-import CreateChatModal from '@/views/CreateChatModal.vue';
+
 import UserPlainteView from '@/views/User-plainteView.vue';
+
+
 
 
 // Vues Freelance
@@ -134,15 +135,6 @@ const routes = [
       title:'Messagerie'
     },
   },
-   {
-      path:'/chat-mission',
-      name:'CreateChatModal',
-      component:CreateChatModal,
-      meta:{
-        requiresAuth:true,
-        title:'pagechat'
-      }
-    },
 
   // Routes Freelance
   {
