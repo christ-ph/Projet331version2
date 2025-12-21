@@ -11,7 +11,7 @@ import ManageDeliverablesView from '@/views/ManageDeliverablesView.vue';
 import ChatView from '@/views/ChatView.vue';
 
 import UserPlainteView from '@/views/User-plainteView.vue';
-
+import SupportIAPlaint from '@/views/SupportChatbot.vue';
 
 
 
@@ -88,6 +88,12 @@ const routes = [
       title: 'Inscription'
     }
   },
+  {
+  path: '/chat/support-technique',
+  name: 'SupportTechnique',
+  component: SupportIAPlaint,
+  meta: { requiresAuth: true }
+},
 
   // Dashboard (auth toutes roles)
  // ============================================
