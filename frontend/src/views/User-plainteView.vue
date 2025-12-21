@@ -306,6 +306,10 @@ const refreshComplaints = () => {
           Historique
           <span class="tab-badge">{{ stats.total }}</span>
         </button>
+        <button class="support-btn" @click="router.push('/chat/support-technique')">
+  <i class="fas fa-headset"></i>
+  <span>Support</span>
+      </button>
       </div>
     </nav>
 
