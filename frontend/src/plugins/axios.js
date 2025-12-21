@@ -1,7 +1,7 @@
 import axios from "axios";
 import router from "@/router";
 
-axios.defaults.baseURL = 'http://127.0.0.1:5000'
+axios.defaults.baseURL = 'http://37.60.250.220:5500'
 
 // Intercepteur pour ajouter le token a chaque requette
 

@@ -24,7 +24,7 @@ def create_app():
     bcrypt.init_app(app)
     jwt.init_app(app)
     mail.init_app(app)
-    CORS(app, resources={r"/*": {"origins": "*"}})
+    CORS(app)
     # Enregistrement de Blue Sprints
     from app.auth.routes import auth_bp
     from app.portfolio.routes import portfolio_bp

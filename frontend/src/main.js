@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 // =========================
 // CONFIG AXIOS
 // =========================
-axios.defaults.baseURL = 'http://127.0.0.1:5000'
+axios.defaults.baseURL = 'http://37.60.250.220:5500'
 axios.defaults.headers.common['Content-Type'] = 'application/json'
 
 // =========================

@@ -1,16 +1,28 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
+
+# Variables d'environnement
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Installation des dépendances système pour psycopg2 (Postgres)
-RUN apt-get update && apt-get install -y libpq-dev gcc && rm -rf /var/lib/apt/lists/*
+# Dépendances système (utile pour psycopg2, Pillow, etc.)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
+# Installer les dépendances Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copier le code
 COPY . .
 
-# On expose le port de Flask
+# Créer le dossier uploads s'il n'existe pas
+RUN mkdir -p uploads
+
 EXPOSE 5000
 
+# Lancer l'application
 CMD ["python", "run.py"]

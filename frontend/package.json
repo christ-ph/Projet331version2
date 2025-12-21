@@ -21,5 +21,10 @@
     "@vitejs/plugin-vue": "^6.0.2",
     "vite": "^7.2.4",
     "vite-plugin-vue-devtools": "^8.0.5"
-  }
+  },
+  "description": "This template should help get you started developing with Vue 3 in Vite.",
+  "main": "vite.config.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }
