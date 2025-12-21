@@ -11,6 +11,9 @@ from app.models import (
 )
 from sqlalchemy import select
 
+# Au début du fichier profiles/routes.py, avec les autres imports
+from app.utils import role_required  # AJOUTEZ CETTE LIGNE
+
 profile_bp = Blueprint('profiles', __name__)
 
 
@@ -271,3 +274,37 @@ def get_my_profile():
         return jsonify({"msg": "Profil introuvable"}), 404
 
     return get_profile(profile.id)  # ✅ Réutilise la logique existante
+
+
+
+# backend/profiles/routes.py - AJOUTEZ CETTE ROUTE
+@profile_bp.route('/freelance/skills', methods=['GET'])
+@jwt_required()
+@role_required(['FREELANCE'])
+def get_freelance_skills():
+    """Récupérer les compétences du freelance"""
+    try:
+        current_user_id = get_jwt_identity()
+        
+        # Récupérer l'utilisateur
+        user = User.query.get(current_user_id)
+        if not user:
+            return jsonify({'skills': []}), 200
+        
+        # Récupérer les compétences
+        skills = []
+        
+        # Depuis FreelanceProfile
+        if hasattr(user, 'freelance_profile') and user.freelance_profile:
+            profile = user.freelance_profile
+            if hasattr(profile, 'skills'):
+                if profile.skills:
+                    if isinstance(profile.skills, list):
+                        skills = profile.skills
+                    elif isinstance(profile.skills, str):
+                        skills = [s.strip() for s in profile.skills.split(',')]
+        
+        return jsonify({'skills': skills}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

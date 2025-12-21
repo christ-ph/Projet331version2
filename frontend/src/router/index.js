@@ -12,6 +12,7 @@ import ChatView from '@/views/ChatView.vue';
 
 import UserPlainteView from '@/views/User-plainteView.vue';
 
+import MissionDetails from '@/views/MissionDetails.vue';
 
 
 
@@ -263,9 +264,13 @@ const routes = [
     component: ManageApplicationsView,
     meta: { requiresAuth: true, requiresRole: 'CLIENT' }
   },
-
+ {
+    path: '/mission/:id',
+    name: 'MissionDetails',
+    component: MissionDetails,
+    meta: { requiresAuth: true }
+  },
  
-
   // Route 404
   {
     path: '/:catchAll(.*)',

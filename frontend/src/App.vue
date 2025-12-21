@@ -22,6 +22,8 @@ const authStore = useAuthStore();
   height: 100%;
   display: flex;
   flex-direction: column;
+   font-family: Rajdahani, sans-serif;
+
 }
 
 .main-content {

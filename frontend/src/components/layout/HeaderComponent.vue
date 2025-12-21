@@ -305,6 +305,8 @@ onUnmounted(() => {
   z-index: 1000;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
   border-bottom: 3px solid #FF6B35;
+  font-family: Rajdahani, sans-serif;
+
 }
 
 .header-container {
