@@ -37,8 +37,8 @@ const mainMenuItems = computed(() => {
       { label: "Créer mission", icon: "fas fa-plus-circle", path: "/missions/create", badge: null },
       { label: "Mes missions", icon: "fas fa-briefcase", path: "/client/missions", badge: 2 },
       { label: "Discussions", icon: "fas fa-comments", path: `/chat/${authStore.user.id}`, badge: unreadMessages.value },
-      { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
-      { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
+     // { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
+     // { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
       { label: "Mon Profil", icon: "fas fa-user-circle", path: "/client-profile", badge: null },
       { label: "Plaintes", icon: "fas fa-exclamation-triangle", path: "/plainte", badge: null },
     ];
@@ -52,10 +52,10 @@ const mainMenuItems = computed(() => {
 
 // ✅ Menu secondaire (actions rapides)
 const quickActions = computed(() => [
-  { label: "Paramètres", icon: "fas fa-cog", path: "/settings" },
-  { label: "Aide & Support", icon: "fas fa-question-circle", path: "/help" },
-  { label: "Centre de formation", icon: "fas fa-graduation-cap", path: "/training" },
-  { label: "Facturation", icon: "fas fa-file-invoice-dollar", path: "/billing" },
+  // { label: "Paramètres", icon: "fas fa-cog", path: "/settings" },
+  // { label: "Aide & Support", icon: "fas fa-question-circle", path: "/help" },
+  // { label: "Centre de formation", icon: "fas fa-graduation-cap", path: "/training" },
+  // { label: "Facturation", icon: "fas fa-file-invoice-dollar", path: "/billing" },
 ]);
 
 // ✅ Navigation
