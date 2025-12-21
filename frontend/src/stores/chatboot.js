@@ -3,7 +3,7 @@ import { useAuthStore } from './auth'
 import { useProfileStore } from './profile'
 
 // ⚠️ IMPORTANT : Remplacez par votre vraie clé API Gemini
-const GEMINI_API_KEY = 'VOTRE_CLE_API_GEMINI_ICI'
+const GEMINI_API_KEY = 'AIzaSyAsPVoz8oC0xPPc2pZQtTlPhD-Py6XUODE'
 
 // Dataset de connaissances de la plateforme
 const PLATFORM_DATASET = {
