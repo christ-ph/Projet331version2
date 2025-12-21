@@ -8,7 +8,7 @@ __pycache__/
 .env
 venv/
 .env.*
-
+steve/
 # Node
 node_modules/
 dist/
