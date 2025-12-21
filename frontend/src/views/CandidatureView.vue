@@ -2,6 +2,9 @@
   <div class="my-applications-page">
     <div class="header-row">
       <h1><i class="fas fa-list"></i> Mes candidatures</h1>
+        <button @click="livrables" class="create-deliverable-btns">
+         <i class="fas fa-list"></i>  Mes livrables
+        </button>
       <div class="header-actions">
         <router-link to="/missions/available" class="btn-secondary">
           <i class="fas fa-arrow-left"></i> Retour aux missions
@@ -446,6 +449,7 @@ const getClientRating = (app) => app?.client?.rating || null
 const setStatusFilter = (status) => { statusFilter.value = status }
 const viewMission = (missionId) => { if (missionId) router.push(`/missions/${missionId}`) }
 const viewMissionDeliverables = (missionId) => { if (missionId) router.push(`/missions/${missionId}/deliverables`) }
+const livrables = () => { router.push('/my-deliverables') }
 
 const reload = async () => {
   statusFilter.value = ''
@@ -799,7 +803,20 @@ const handleDeliverableSubmit = async (formData) => {
     justify-content: center;
   }
 }
-
+.create-deliverable-btns {
+ padding: 10px 20px;
+ font-size: 27px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
 @media (max-width: 480px) {
   .application-card {
     padding: 20px;
