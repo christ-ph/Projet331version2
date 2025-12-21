@@ -7,8 +7,8 @@ const authStore = useAuthStore();
 const router = useRouter();
 const mobileMenuOpen = ref(false);
 const showNotifications = ref(false);
-const unreadNotifications = ref(5);
-const unreadMessages = ref(3);
+const unreadNotifications = ref(0);
+const unreadMessages = ref(0);
 
 // ✅ Rôle de l'utilisateur
 const role = computed(() => authStore.user?.role || null);
@@ -22,7 +22,7 @@ const mainMenuItems = computed(() => {
     return [
       { label: "Dashboard", icon: "fas fa-chart-line", path: "/dashboard", badge: null },
       { label: "Missions", icon: "fas fa-tasks", path: "/missions", badge: unreadNotifications.value },
-      { label: "Propositions", icon: "fas fa-paper-plane", path: "/applications", badge: null },
+      { label: "Postulées", icon: "fas fa-paper-plane", path: "/applications", badge: null },
       { label: "Discussions", icon: "fas fa-comments", path: `/chat/${ authStore.user.id}`, badge: unreadMessages.value },
       // { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
       // { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
