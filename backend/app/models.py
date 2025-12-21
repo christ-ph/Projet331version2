@@ -8,7 +8,18 @@ bcrypt = Bcrypt()
 # ============================
 # ENUMS
 # ============================
+class ComplaintStatus(enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
+class AdminActionType(enum.Enum):
+    APPROVE_COMPLAINT = "approve_complaint"
+    REJECT_COMPLAINT = "reject_complaint"
+    BLOCK_USER = "block_user"
+    UNBLOCK_USER = "unblock_user"
+
+    
 class MissionStatus(enum.Enum):
     DRAFT = "draft"         
     OPEN = "open"
@@ -47,9 +58,6 @@ class Role(db.Model):
     name = db.Column(db.String(50), unique=True, nullable=False)
     users = db.relationship('User', backref='role', lazy='select')
 
-
-
-
 # ============================
 # USER
 # ============================
@@ -78,21 +86,6 @@ class User(db.Model):
 
     def check_password(self, password):
         return bcrypt.check_password_hash(self.password_hash, password)
-    
-
-
-
-# Ajouter ces Enums avec les autres au début du fichier
-class ComplaintStatus(enum.Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
-class AdminActionType(enum.Enum):
-    APPROVE_COMPLAINT = "approve_complaint"
-    REJECT_COMPLAINT = "reject_complaint"
-    BLOCK_USER = "block_user"
-    UNBLOCK_USER = "unblock_user"
 
 # ============================
 # ACTION ACCOUNT (Plainte)
@@ -160,6 +153,8 @@ class AdminAction(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
+
+
 # ============================
 # CHAT (Ajouté)
 # ============================
@@ -214,12 +209,16 @@ class Chat(db.Model):
     
     def get_notification_count(self, user_id, user_role):
         """Retourne le compteur de notifications pour cet utilisateur"""
+        # Pour les admins
         if user_role == 'ADMIN':
             return self.notification_admin
-        elif self.user1_id == user_id:
+        
+        # Pour les participants
+        if self.user1_id == user_id:
             return self.notification_user1
         elif self.user2_id == user_id:
             return self.notification_user2
+        
         return 0
     
     def to_dict(self):

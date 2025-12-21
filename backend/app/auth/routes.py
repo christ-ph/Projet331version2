@@ -3,7 +3,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from app import db, mail # On importe db pour les sessions et les commits
 from app.models import User, Role
 from sqlalchemy import select # Import nécessaire pour la syntaxe moderne de requête
-from app.utils import role_required ,is_active_required 
+from app.utils import role_required 
 from datetime import datetime, timedelta
 from flask_mail import Message
 import random

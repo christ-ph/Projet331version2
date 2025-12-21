@@ -34,12 +34,12 @@ def create_app():
     from app.missions.routes import missions_bp
     from app.livrable.routes import deliverables_bp
     from app.chats.routes import chat_bp
-    from app.admin.routes import admin_bp
     app.register_blueprint(chat_bp, url_prefix='/api/chats')
     app.register_blueprint(deliverables_bp, url_prefix='/api/deliverables')
     app.register_blueprint(profile_bp, url_prefix='/api/profiles')
     app.register_blueprint(missions_bp , url_prefix='/api/missions')
-    app.register_blueprint(admin_bp , url_prefix='/admin')
+    from app.admin.routes import admin_bp
+    app.register_blueprint(admin_bp, url_prefix='/admin')
 
     # from app.chats.routes import chat_bp
     # app.register_blueprint(chat_bp) 

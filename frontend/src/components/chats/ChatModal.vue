@@ -1,6 +1,6 @@
 <template>
   <!-- Overlay -->
-  <div v-if="isOpen" class="chat-modal-overlay" @click="closeModal">
+  <div v-if="isOpen" class="chat-modal-overlay" @click.self="closeModal">
     <!-- Modal -->
     <div class="chat-modal" @click.stop>
       <!-- En-tête -->
@@ -12,7 +12,7 @@
             </span>
             <span v-else>Messages</span>
           </h3>
-          <span v-if="unreadCount > 0" class="header-badge">
+          <span v-if="unreadCount > 0 && !activeChat" class="header-badge">
             {{ unreadCount }} non lu{{ unreadCount > 1 ? 's' : '' }}
           </span>
         </div>
@@ -48,7 +48,7 @@
             <p>Chargement des conversations...</p>
           </div>
           
-          <div v-else-if="chats.length === 0" class="no-chats">
+          <div v-else-if="filteredChats.length === 0" class="no-chats">
             <div class="empty-icon">💬</div>
             <h4>Aucune conversation</h4>
             <p>Commencez une nouvelle discussion</p>
@@ -59,7 +59,7 @@
           
           <div v-else class="chats-list">
             <div 
-              v-for="chat in chats"
+              v-for="chat in filteredChats"
               :key="chat.id"
               class="chat-item"
               :class="{ 
@@ -88,6 +88,9 @@
                 
                 <div v-if="chat.chat_type === 'mission'" class="chat-item-meta">
                   <span class="mission-tag">Mission</span>
+                  <span v-if="chat.mission" class="mission-title">
+                    {{ truncateText(chat.mission.title, 20) }}
+                  </span>
                 </div>
               </div>
               
@@ -106,6 +109,7 @@
               <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
               </svg>
+              <span class="back-text">Retour</span>
             </button>
             
             <div class="chat-info">
@@ -113,9 +117,17 @@
               <p v-if="activeChat.mission" class="chat-subtitle">
                 Mission: {{ activeChat.mission.title }}
               </p>
+              <p v-else-if="activeChat.other_user" class="chat-subtitle">
+                {{ activeChat.other_user.email }}
+              </p>
             </div>
             
-            <button @click="markAsRead" class="mark-read-btn" title="Marquer comme lu">
+            <button 
+              v-if="activeChat.unread_count > 0"
+              @click="markAsRead"
+              class="mark-read-btn" 
+              title="Marquer comme lu"
+            >
               <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
               </svg>
@@ -125,12 +137,14 @@
           <!-- Messages -->
           <div ref="messagesContainer" class="messages-container">
             <div v-if="loadingMessages" class="loading-messages">
-              <div class="spinner"></div>
+              <div class="spinner small"></div>
+              <p>Chargement des messages...</p>
             </div>
             
             <div v-else-if="messages.length === 0" class="no-messages">
+              <div class="empty-messages-icon">📭</div>
               <p>Aucun message</p>
-              <p>Soyez le premier à envoyer un message !</p>
+              <p class="subtext">Soyez le premier à envoyer un message !</p>
             </div>
             
             <div v-else class="messages-list">
@@ -144,12 +158,18 @@
                 }"
               >
                 <div class="message-content">
-                  <p>{{ message.content }}</p>
+                  <p class="message-text">{{ message.content }}</p>
                   <span class="message-time">
                     {{ formatMessageTime(message.created_at) }}
                   </span>
                 </div>
               </div>
+            </div>
+            
+            <!-- Indicateur de chargement lors de l'envoi -->
+            <div v-if="sending" class="sending-indicator-messages">
+              <div class="sending-spinner"></div>
+              <span>Envoi en cours...</span>
             </div>
           </div>
 
@@ -176,10 +196,6 @@
                 </svg>
               </button>
             </form>
-            
-            <div v-if="sending" class="sending-indicator">
-              Envoi en cours...
-            </div>
           </div>
         </div>
       </div>
@@ -207,7 +223,7 @@ const emit = defineEmits(['close', 'open-support']);
 const chatStore = useChatStore();
 const authStore = useAuthStore();
 
-// Refs
+// Refs - les variables d'état locales
 const activeChat = ref(null);
 const newMessage = ref('');
 const loading = ref(false);
@@ -216,75 +232,124 @@ const sending = ref(false);
 const messagesContainer = ref(null);
 const messageInput = ref(null);
 
+// Variables pour le polling
+let pollingInterval = null;
+const pollingActive = ref(false);
+
 // Computed
 const currentUserId = computed(() => authStore.user?.id);
 const chats = computed(() => chatStore.chats);
 const messages = computed(() => chatStore.messages);
 const unreadCount = computed(() => chatStore.unreadCount);
 
+// Filtrer les chats pour éviter les doublons
+const filteredChats = computed(() => {
+  const uniqueChats = [];
+  const seenIds = new Set();
+  
+  chats.value.forEach(chat => {
+    if (!seenIds.has(chat.id)) {
+      seenIds.add(chat.id);
+      uniqueChats.push(chat);
+    }
+  });
+  
+  return uniqueChats;
+});
+
 // Fonctions utilitaires
-function getChatTitle(chat) {
+const getChatTitle = (chat) => {
   if (chat.chat_type === 'support') return 'Support';
   
   if (chat.other_user) {
-    return chat.other_user.email.split('@')[0];
+    return chat.other_user.full_name || chat.other_user.email.split('@')[0];
+  }
+  
+  if (chat.mission) {
+    return chat.mission.title;
   }
   
   return chat.user1_id === currentUserId.value 
     ? `Utilisateur ${chat.user2_id}`
     : `Utilisateur ${chat.user1_id}`;
-}
+};
 
-function getAvatarInitials(chat) {
+const getAvatarInitials = (chat) => {
   if (chat.chat_type === 'support') return 'S';
   
-  const title = getChatTitle(chat);
-  return title.charAt(0).toUpperCase();
-}
+  if (chat.other_user?.full_name) {
+    const names = chat.other_user.full_name.split(' ');
+    return names.map(name => name[0]).join('').toUpperCase().slice(0, 2);
+  }
+  
+  if (chat.mission?.title) {
+    return chat.mission.title.charAt(0).toUpperCase();
+  }
+  
+  return 'U';
+};
 
-function getLastMessagePreview(chat) {
+const getLastMessagePreview = (chat) => {
   if (!chat.last_message) return 'Aucun message';
   const msg = chat.last_message.content;
-  return msg.length > 50 ? msg.substring(0, 50) + '...' : msg;
-}
+  return msg.length > 40 ? msg.substring(0, 40) + '...' : msg;
+};
 
-function formatTime(dateString) {
+const formatTime = (dateString) => {
   if (!dateString) return '';
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-  
-  if (diffDays === 0) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } else if (diffDays === 1) {
-    return 'Hier';
-  } else if (diffDays < 7) {
-    return date.toLocaleDateString([], { weekday: 'short' });
-  } else {
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (diffDays === 1) {
+      return 'Hier';
+    } else if (diffDays < 7) {
+      return date.toLocaleDateString([], { weekday: 'short' });
+    } else {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+  } catch (error) {
+    return '';
   }
-}
+};
 
-function formatMessageTime(dateString) {
+const formatMessageTime = (dateString) => {
   if (!dateString) return '';
-  const date = new Date(dateString);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch (error) {
+    return '';
+  }
+};
+
+const truncateText = (text, maxLength) => {
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+};
 
 // Fonctions principales
-async function selectChat(chat) {
+const selectChat = async (chat) => {
+  if (!chat) return;
+  
   activeChat.value = chat;
   loadingMessages.value = true;
   
   try {
+    // Charger les messages
     await chatStore.fetchChatMessages(chat.id);
-    // Marquer comme lu automatiquement
+    
+    // Marquer comme lu si nécessaire
     if (chat.unread_count > 0) {
       await chatStore.markChatAsRead(chat.id);
     }
     
-    // Focus sur l'input après chargement
-    nextTick(() => {
+    // Focus sur l'input et scroll
+    await nextTick(() => {
       scrollToBottom();
       if (messageInput.value) {
         messageInput.value.focus();
@@ -295,9 +360,9 @@ async function selectChat(chat) {
   } finally {
     loadingMessages.value = false;
   }
-}
+};
 
-async function sendMessage() {
+const sendMessage = async () => {
   if (!newMessage.value.trim() || !activeChat.value || sending.value) return;
   
   sending.value = true;
@@ -305,13 +370,16 @@ async function sendMessage() {
   newMessage.value = '';
   
   try {
+    // Envoyer le message
     await chatStore.sendMessage(activeChat.value.id, messageToSend);
     
-    // Recharger les messages pour avoir l'ID du message
-    await chatStore.fetchChatMessages(activeChat.value.id);
-    
-    // Scroll vers le bas
-    nextTick(scrollToBottom);
+    // Ne pas recharger TOUS les messages, seulement ajouter le nouveau
+    await nextTick(() => {
+      scrollToBottom();
+      if (messageInput.value) {
+        messageInput.value.focus();
+      }
+    });
   } catch (error) {
     console.error('Erreur envoi message:', error);
     // Remettre le message en cas d'erreur
@@ -319,76 +387,235 @@ async function sendMessage() {
   } finally {
     sending.value = false;
   }
-}
+};
 
-function scrollToBottom() {
+const scrollToBottom = () => {
   if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-  }
-}
-
-function backToList() {
-  activeChat.value = null;
-  chatStore.messages = [];
-}
-
-async function markAsRead() {
-  if (activeChat.value) {
-    await chatStore.markChatAsRead(activeChat.value.id);
-  }
-}
-
-function openSupportChat() {
-  emit('open-support');
-}
-
-function closeModal() {
-  activeChat.value = null;
-  chatStore.messages = [];
-  newMessage.value = '';
-  emit('close');
-}
-
-// Charger les chats quand le modal s'ouvre
-watch(() => props.isOpen, async (isOpen) => {
-  if (isOpen && !chatStore.chats.length) {
-    loading.value = true;
-    try {
-      await chatStore.fetchMyChats();
-    } catch (error) {
-      console.error('Erreur chargement chats:', error);
-    } finally {
-      loading.value = false;
-    }
-  }
-  
-  // Focus sur l'input quand on ouvre le modal
-  if (isOpen) {
-    nextTick(() => {
-      if (messageInput.value) {
-        messageInput.value.focus();
-      }
+    requestAnimationFrame(() => {
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
     });
   }
-});
+};
 
-// Polling pour les nouvelles notifications
-let pollingInterval = null;
+const backToList = () => {
+  activeChat.value = null;
+  chatStore.messages = []; // Réinitialiser seulement les messages
+};
 
-onMounted(() => {
+const markAsRead = async () => {
+  if (activeChat.value && activeChat.value.unread_count > 0) {
+    try {
+      await chatStore.markChatAsRead(activeChat.value.id);
+    } catch (error) {
+      console.error('Erreur marquer comme lu:', error);
+    }
+  }
+};
+
+const openSupportChat = () => {
+  emit('open-support');
+};
+
+const closeModal = () => {
+  // Réinitialiser l'état local
+  activeChat.value = null;
+  newMessage.value = '';
+  
+  // Émettre l'événement de fermeture
+  emit('close');
+};
+
+// Fonction pour ouvrir un chat par ID
+const openChatById = async (chatId) => {
+  loading.value = true;
+  try {
+    // Chercher le chat dans la liste
+    let chat = chats.value.find(c => c.id === chatId);
+    
+    if (!chat) {
+      // Si pas trouvé, recharger les chats
+      await chatStore.fetchMyChats();
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      chat = chats.value.find(c => c.id === chatId);
+    }
+    
+    if (chat) {
+      await selectChat(chat);
+    }
+  } catch (error) {
+    console.error('Erreur ouverture chat:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+// Gestion du polling
+const startPolling = () => {
+  if (pollingActive.value) return; // Éviter les doublons
+  
+  pollingActive.value = true;
+  stopPolling(); // S'assurer qu'il n'y a pas de doublon
+  
   pollingInterval = setInterval(() => {
     if (props.isOpen && document.visibilityState === 'visible') {
       chatStore.checkForNewMessages().catch(() => {});
     }
-  }, 10000);
-});
+  }, 30000); // 30 secondes
+};
 
+const stopPolling = () => {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+  pollingActive.value = false;
+};
+
+// Écouteur d'événement global
+const handleOpenChatEvent = (event) => {
+  if (event.detail && event.detail.chatId) {
+    openChatById(event.detail.chatId);
+  }
+};
+
+// Surveiller l'état d'ouverture
+watch(() => props.isOpen, async (isOpen) => {
+  if (isOpen) {
+    // Charger les chats si nécessaire
+    if (chatStore.chats.length === 0 && !loading.value) {
+      loading.value = true;
+      try {
+        await chatStore.fetchMyChats();
+      } catch (error) {
+        console.error('Erreur chargement chats:', error);
+      } finally {
+        loading.value = false;
+      }
+    }
+    
+    // Focus
+    nextTick(() => {
+      if (messageInput.value && activeChat.value) {
+        messageInput.value.focus();
+      }
+    });
+    
+    // Démarrer le polling
+    startPolling();
+    
+    // Ajouter l'écouteur d'événement
+    window.addEventListener('open-chat-modal', handleOpenChatEvent);
+  } else {
+    // Arrêter le polling
+    stopPolling();
+    
+    // Supprimer l'écouteur d'événement
+    window.removeEventListener('open-chat-modal', handleOpenChatEvent);
+    
+    // Réinitialiser l'état local
+    activeChat.value = null;
+    newMessage.value = '';
+  }
+}, { immediate: true });
+
+// Nettoyage
 onUnmounted(() => {
-  if (pollingInterval) clearInterval(pollingInterval);
+  stopPolling();
+  window.removeEventListener('open-chat-modal', handleOpenChatEvent);
 });
 </script>
 
 <style scoped>
+/* Vos styles CSS restent exactement les mêmes */
+.chat-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.chat-modal {
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Styles inchangés - exactement comme avant */
+.chat-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.chat-modal {
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 /* Styles du modal */
 .chat-modal-overlay {
   position: fixed;
@@ -402,6 +629,7 @@ onUnmounted(() => {
   justify-content: center;
   z-index: 9999;
   backdrop-filter: blur(2px);
+  animation: fadeIn 0.2s ease-out;
 }
 
 .chat-modal {
@@ -414,6 +642,23 @@ onUnmounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* En-tête */
@@ -440,7 +685,7 @@ onUnmounted(() => {
 
 .header-badge {
   background: rgba(255, 255, 255, 0.2);
-  padding: 2px 8px;
+  padding: 4px 10px;
   border-radius: 12px;
   font-size: 12px;
   font-weight: 500;
@@ -456,7 +701,7 @@ onUnmounted(() => {
   border: none;
   color: white;
   cursor: pointer;
-  padding: 6px;
+  padding: 8px;
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -509,25 +754,35 @@ onUnmounted(() => {
   margin-bottom: 16px;
 }
 
+.spinner.small {
+  width: 24px;
+  height: 24px;
+  border-width: 2px;
+  margin-bottom: 0;
+}
+
 .empty-icon {
   font-size: 48px;
   margin-bottom: 16px;
+  opacity: 0.5;
 }
 
 .start-chat-btn {
   margin-top: 16px;
-  padding: 10px 20px;
+  padding: 12px 24px;
   background: #667eea;
   color: white;
   border: none;
   border-radius: 8px;
   cursor: pointer;
   font-weight: 500;
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
 .start-chat-btn:hover {
   background: #5a67d8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 /* Items de chat */
@@ -535,30 +790,35 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
+  padding: 14px;
   border-radius: 12px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s;
   margin-bottom: 8px;
   border: 1px solid #e5e7eb;
+  background: white;
 }
 
 .chat-item:hover {
   background: #f9fafb;
+  border-color: #d1d5db;
+  transform: translateX(2px);
 }
 
 .chat-item.active {
   background: #f3f4f6;
-  border-color: #d1d5db;
+  border-color: #667eea;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
 }
 
 .chat-item.unread {
   border-left: 4px solid #667eea;
+  background: #f8fafc;
 }
 
 .avatar {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -578,61 +838,79 @@ onUnmounted(() => {
 .chat-item-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
+  align-items: flex-start;
+  margin-bottom: 6px;
 }
 
 .chat-item-title {
   font-weight: 600;
   color: #111827;
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 200px;
 }
 
 .chat-item-time {
   font-size: 12px;
   color: #6b7280;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .chat-item-preview {
   font-size: 13px;
   color: #6b7280;
-  margin: 0 0 4px 0;
+  margin: 0 0 6px 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.4;
 }
 
 .chat-item-meta {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .mission-tag {
   font-size: 11px;
   color: #667eea;
   background: #e0e7ff;
-  padding: 2px 6px;
+  padding: 3px 8px;
   border-radius: 10px;
-  font-weight: 500;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.mission-title {
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
 }
 
 .chat-item-badge {
   background: #ef4444;
   color: white;
   border-radius: 50%;
-  min-width: 20px;
-  height: 20px;
-  font-size: 11px;
-  font-weight: 600;
+  min-width: 22px;
+  height: 22px;
+  font-size: 12px;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 /* Fenêtre de chat */
@@ -650,27 +928,35 @@ onUnmounted(() => {
   padding: 16px 20px;
   border-bottom: 1px solid #e5e7eb;
   background: white;
+  flex-shrink: 0;
 }
 
 .back-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px;
+  padding: 6px 10px;
   border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   color: #6b7280;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  font-weight: 500;
 }
 
 .back-btn:hover {
   background: #f3f4f6;
+  color: #374151;
+}
+
+.back-text {
+  font-size: 14px;
 }
 
 .chat-info {
   flex: 1;
+  min-width: 0;
 }
 
 .chat-info h4 {
@@ -678,25 +964,31 @@ onUnmounted(() => {
   font-weight: 600;
   margin: 0 0 4px 0;
   color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-subtitle {
   font-size: 12px;
   color: #6b7280;
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mark-read-btn {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px;
+  padding: 8px;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #6b7280;
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
 .mark-read-btn:hover {
@@ -710,30 +1002,63 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 20px;
   background: #f9fafb;
+  display: flex;
+  flex-direction: column;
 }
 
 .loading-messages {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
+  gap: 12px;
+  color: #6b7280;
 }
 
 .no-messages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
   text-align: center;
   color: #6b7280;
-  padding: 40px 20px;
+}
+
+.empty-messages-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.subtext {
+  font-size: 14px;
+  color: #9ca3af;
+  margin-top: 4px;
 }
 
 .messages-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding-bottom: 10px;
 }
 
 .message {
   max-width: 80%;
-  animation: fadeIn 0.3s ease;
+  animation: messageSlide 0.3s ease;
+}
+
+@keyframes messageSlide {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .message.sent {
@@ -746,10 +1071,12 @@ onUnmounted(() => {
 
 .message-content {
   position: relative;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-radius: 18px;
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.5;
+  word-wrap: break-word;
+  max-width: 100%;
 }
 
 .message.sent .message-content {
@@ -763,23 +1090,49 @@ onUnmounted(() => {
   color: #111827;
   border: 1px solid #e5e7eb;
   border-bottom-left-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.message-text {
+  margin: 0 0 8px 0;
 }
 
 .message-time {
   font-size: 11px;
   opacity: 0.8;
-  margin-top: 4px;
   display: block;
+  text-align: right;
 }
 
 .message.sent .message-time {
   color: rgba(255, 255, 255, 0.9);
-  text-align: right;
 }
 
 .message.received .message-time {
   color: #6b7280;
-  text-align: left;
+}
+
+.sending-indicator-messages {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  align-self: flex-end;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.sending-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
 /* Input d'envoi */
@@ -787,36 +1140,40 @@ onUnmounted(() => {
   border-top: 1px solid #e5e7eb;
   background: white;
   padding: 16px 20px;
+  flex-shrink: 0;
 }
 
 .message-form {
   display: flex;
-  gap: 8px;
+  gap: 10px;
+  align-items: center;
 }
 
 .message-form input {
   flex: 1;
-  padding: 10px 16px;
-  border: 1px solid #d1d5db;
+  padding: 12px 18px;
+  border: 2px solid #d1d5db;
   border-radius: 24px;
   font-size: 14px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: all 0.2s;
+  background: #f9fafb;
 }
 
 .message-form input:focus {
   border-color: #667eea;
+  background: white;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .message-form input:disabled {
-  background: #f9fafb;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
 .send-btn {
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
@@ -845,27 +1202,9 @@ onUnmounted(() => {
   stroke-width: 2.5;
 }
 
-.sending-indicator {
-  font-size: 12px;
-  color: #6b7280;
-  text-align: center;
-  margin-top: 8px;
-  animation: pulse 2s infinite;
-}
-
 /* Animations */
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 
 /* Responsive */
@@ -882,8 +1221,93 @@ onUnmounted(() => {
     padding: 0;
   }
   
+  .chat-item-title {
+    max-width: 150px;
+  }
+  
   .message {
-    max-width: 90%;
+    max-width: 85%;
+  }
+  
+  .back-text {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .chat-header {
+    padding: 12px 16px;
+  }
+  
+  .chat-content {
+    padding: 0;
+  }
+  
+  .chat-list-container,
+  .messages-container {
+    padding: 16px;
+  }
+  
+  .message-input-container {
+    padding: 12px 16px;
+  }
+  
+  .message-form input {
+    padding: 10px 16px;
+  }
+  
+  .send-btn {
+    width: 42px;
+    height: 42px;
+  }
+  
+  .chat-item {
+    padding: 12px;
+  }
+  
+  .avatar {
+    width: 40px;
+    height: 40px;
+    font-size: 14px;
+  }
+}
+
+/* Scrollbar styling */
+.chat-list-container::-webkit-scrollbar,
+.messages-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-list-container::-webkit-scrollbar-track,
+.messages-container::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.chat-list-container::-webkit-scrollbar-thumb,
+.messages-container::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.chat-list-container::-webkit-scrollbar-thumb:hover,
+.messages-container::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+  .chat-item:hover {
+    background: white;
+    transform: none;
+  }
+  
+  .chat-item:active {
+    background: #f3f4f6;
+  }
+  
+  .send-btn:hover:not(:disabled) {
+    transform: none;
   }
 }
 </style>

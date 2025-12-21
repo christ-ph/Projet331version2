@@ -119,8 +119,7 @@ const submitProfile = async () => {
     successMessage.value = "🎉 Profil créé avec succès !";
     
     setTimeout(() => {
-      // router.push('/dashboard');
-      document.location.href = '/dashboard';
+      router.push('/dashboard');
     }, 1500);
 
   } catch (e) {
