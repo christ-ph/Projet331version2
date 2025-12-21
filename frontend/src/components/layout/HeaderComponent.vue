@@ -24,8 +24,8 @@ const mainMenuItems = computed(() => {
       { label: "Missions", icon: "fas fa-tasks", path: "/missions", badge: unreadNotifications.value },
       { label: "Propositions", icon: "fas fa-paper-plane", path: "/applications", badge: null },
       { label: "Discussions", icon: "fas fa-comments", path: `/chat/${ authStore.user.id}`, badge: unreadMessages.value },
-      { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
-      { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
+      // { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
+      // { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
       { label: "Mon Profil", icon: "fas fa-user-circle", path: "/freelance-profile", badge: null },
       { label: "Plaintes", icon: "fas fa-exclamation-triangle", path: "/plainte", badge: null },
     ];
