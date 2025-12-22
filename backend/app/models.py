@@ -74,6 +74,8 @@ class User(db.Model):
     reset_token = db.Column(db.String(255), nullable=True)
     reset_token_expiration = db.Column(db.DateTime, nullable=True)
     role_id = db.Column(db.Integer, db.ForeignKey('role.id'), nullable=False)
+    saved_missions = db.Column(db.JSON, default=list)  # Liste d'IDs de missions sauvegardées
+    skills = db.Column(db.JSON, default=list)  # Compétences du freelance
 
     profile = db.relationship('Profile', backref='user', uselist=False)
     sent_messages = db.relationship('Message', foreign_keys='Message.sender_id', backref='sender')

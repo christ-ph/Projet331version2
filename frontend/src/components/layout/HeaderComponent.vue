@@ -7,8 +7,8 @@ const authStore = useAuthStore();
 const router = useRouter();
 const mobileMenuOpen = ref(false);
 const showNotifications = ref(false);
-const unreadNotifications = ref(5);
-const unreadMessages = ref(3);
+const unreadNotifications = ref(0);
+const unreadMessages = ref(0);
 
 // ✅ Rôle de l'utilisateur
 const role = computed(() => authStore.user?.role || null);
@@ -22,10 +22,10 @@ const mainMenuItems = computed(() => {
     return [
       { label: "Dashboard", icon: "fas fa-chart-line", path: "/dashboard", badge: null },
       { label: "Missions", icon: "fas fa-tasks", path: "/missions", badge: unreadNotifications.value },
-      { label: "Propositions", icon: "fas fa-paper-plane", path: "/applications", badge: null },
+      { label: "Postulées", icon: "fas fa-paper-plane", path: "/applications", badge: null },
       { label: "Discussions", icon: "fas fa-comments", path: `/chat/${ authStore.user.id}`, badge: unreadMessages.value },
-      { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
-      { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
+      // { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
+      // { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
       { label: "Mon Profil", icon: "fas fa-user-circle", path: "/freelance-profile", badge: null },
       { label: "Plaintes", icon: "fas fa-exclamation-triangle", path: "/plainte", badge: null },
     ];
@@ -37,8 +37,8 @@ const mainMenuItems = computed(() => {
       { label: "Créer mission", icon: "fas fa-plus-circle", path: "/missions/create", badge: null },
       { label: "Mes missions", icon: "fas fa-briefcase", path: "/client/missions", badge: 2 },
       { label: "Discussions", icon: "fas fa-comments", path: `/chat/${authStore.user.id}`, badge: unreadMessages.value },
-      { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
-      { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
+     // { label: "Statistiques", icon: "fas fa-chart-bar", path: "/stats", badge: null },
+     // { label: "Relations", icon: "fas fa-user-friends", path: "/network", badge: null },
       { label: "Mon Profil", icon: "fas fa-user-circle", path: "/client-profile", badge: null },
       { label: "Plaintes", icon: "fas fa-exclamation-triangle", path: "/plainte", badge: null },
     ];
@@ -52,10 +52,10 @@ const mainMenuItems = computed(() => {
 
 // ✅ Menu secondaire (actions rapides)
 const quickActions = computed(() => [
-  { label: "Paramètres", icon: "fas fa-cog", path: "/settings" },
-  { label: "Aide & Support", icon: "fas fa-question-circle", path: "/help" },
-  { label: "Centre de formation", icon: "fas fa-graduation-cap", path: "/training" },
-  { label: "Facturation", icon: "fas fa-file-invoice-dollar", path: "/billing" },
+  // { label: "Paramètres", icon: "fas fa-cog", path: "/settings" },
+  // { label: "Aide & Support", icon: "fas fa-question-circle", path: "/help" },
+  // { label: "Centre de formation", icon: "fas fa-graduation-cap", path: "/training" },
+  // { label: "Facturation", icon: "fas fa-file-invoice-dollar", path: "/billing" },
 ]);
 
 // ✅ Navigation
@@ -305,6 +305,8 @@ onUnmounted(() => {
   z-index: 1000;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
   border-bottom: 3px solid #FF6B35;
+  font-family: Rajdahani, sans-serif;
+
 }
 
 .header-container {
