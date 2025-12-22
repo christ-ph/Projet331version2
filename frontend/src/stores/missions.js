@@ -1,5 +1,7 @@
+// stores/missions.js
 import { defineStore } from 'pinia'
 import axios from 'axios'
+import { useAuthStore } from './auth'
 
 export const useMissionStore = defineStore('missions', {
   state: () => ({
@@ -8,6 +10,7 @@ export const useMissionStore = defineStore('missions', {
     currentMission: null, // mission actuellement sélectionnée
     missionApplications: [], // candidatures pour la mission courante (client)
     availableMissions: [], // missions visibles par les freelances (statut "open")
+    clientStats: null,   // statistiques client
     loading: false,
     error: null,
     selectedMission: null, // Mission sélectionnée pour les détails
@@ -16,6 +19,12 @@ export const useMissionStore = defineStore('missions', {
       skills: [],
       budget_min: null,
       budget_max: null
+    },
+    pagination: {
+      page: 1,
+      perPage: 20,
+      total: 0,
+      pages: 1
     }
   }),
 
@@ -108,10 +117,111 @@ export const useMissionStore = defineStore('missions', {
           : 0
       };
       return stats;
-    }
+    },
+
+    // Statistiques pour le dashboard client
+    dashboardStats: (state) => {
+      const myMissions = state.myMissions;
+      return {
+        totalProjects: myMissions.length,
+        activeProjects: myMissions.filter(m => 
+          ['open', 'in_progress'].includes(m.status)
+        ).length,
+        completedProjects: myMissions.filter(m => m.status === 'completed').length,
+        totalSpent: myMissions
+          .filter(m => m.status === 'completed' && m.budget)
+          .reduce((sum, m) => sum + (m.budget || 0), 0)
+      };
+    },
+
+    // Pour le dashboard client
+    clientStatsComputed: (state) => state.clientStats
   },
 
   actions: {
+    // ======================
+    // NOUVELLES ACTIONS POUR LE DASHBOARD
+    // ======================
+
+    // Récupérer les statistiques du client
+    async fetchClientStats() {
+      this.loading = true;
+      this.error = null;
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.get('/api/missions/stats', {
+          headers: authStore.authHeader
+        });
+        
+        this.clientStats = response.data;
+        return response.data;
+      } catch (error) {
+        console.error('❌ ERROR fetching client stats:', error);
+        this.error = error.response?.data?.error || error.message;
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    // Exporter les missions
+    async exportMissions(format = 'pdf', missionId = null) {
+      try {
+        const authStore = useAuthStore();
+        let url = `/api/missions/export?format=${format}`;
+        
+        if (missionId) {
+          url += `&mission_id=${missionId}`;
+        }
+        
+        const response = await axios.get(url, {
+          headers: authStore.authHeader,
+          responseType: 'blob'
+        });
+        
+        // Créer un URL pour le blob
+        const blob = new Blob([response.data], {
+          type: response.headers['content-type']
+        });
+        
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        
+        // Déterminer le nom du fichier
+        const timestamp = new Date().getTime();
+        let filename = `missions_export_${timestamp}`;
+        
+        if (missionId) {
+          filename = `mission_${missionId}_export_${timestamp}`;
+        }
+        
+        switch (format) {
+          case 'csv':
+            filename += '.csv';
+            break;
+          case 'excel':
+            filename += '.xlsx';
+            break;
+          case 'pdf':
+            filename += '.pdf';
+            break;
+        }
+        
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+        
+        return true;
+      } catch (error) {
+        console.error('❌ ERROR exporting missions:', error);
+        this.error = error.response?.data?.error || error.message;
+        throw error;
+      }
+    },
+
     // ======================
     // CLIENT - Gestion des missions
     // ======================
@@ -121,7 +231,11 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.get('/api/missions/my-missions', { params })
+        const authStore = useAuthStore();
+        const res = await axios.get('/api/missions/my-missions', { 
+          params,
+          headers: authStore.authHeader
+        })
         this.myMissions = res.data
         return res.data
       } catch (e) {
@@ -147,9 +261,11 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
+        const authStore = useAuthStore();
         const res = await axios.put(
           `/api/missions/${missionId}/applications/${applicationId}/status`,
-          { status }
+          { status },
+          { headers: authStore.authHeader }
         )
         
         // Mettre à jour localement le statut
@@ -190,7 +306,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.put(`/api/missions/${missionId}/complete`, evaluationData)
+        const authStore = useAuthStore();
+        const res = await axios.put(`/api/missions/${missionId}/complete`, evaluationData, {
+          headers: authStore.authHeader
+        })
         
         // Utiliser la méthode de mise à jour locale
         this.updateLocalMissionStatus(missionId, 'completed')
@@ -224,7 +343,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.put(`/api/missions/${missionId}/cancel`, {})
+        const authStore = useAuthStore();
+        const res = await axios.put(`/api/missions/${missionId}/cancel`, {}, {
+          headers: authStore.authHeader
+        })
         
         // Mettre à jour localement
         this.updateLocalMissionStatus(missionId, 'cancelled')
@@ -247,7 +369,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.post('/api/missions', payload)
+        const authStore = useAuthStore();
+        const res = await axios.post('/api/missions', payload, {
+          headers: authStore.authHeader
+        })
         // Ajouter au début de la liste
         this.myMissions.unshift(res.data)
         return res.data
@@ -264,7 +389,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.put(`/api/missions/${id}`, payload)
+        const authStore = useAuthStore();
+        const res = await axios.put(`/api/missions/${id}`, payload, {
+          headers: authStore.authHeader
+        })
 
         // Mettre à jour dans myMissions
         this.myMissions = this.myMissions.map(m =>
@@ -290,7 +418,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        await axios.delete(`/api/missions/${id}`)
+        const authStore = useAuthStore();
+        await axios.delete(`/api/missions/${id}`, {
+          headers: authStore.authHeader
+        })
         
         // Retirer de la liste
         this.myMissions = this.myMissions.filter(m => m.id !== id)
@@ -318,7 +449,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.get(`/api/missions/${missionId}/postulations`)
+        const authStore = useAuthStore();
+        const res = await axios.get(`/api/missions/${missionId}/postulations`, {
+          headers: authStore.authHeader
+        })
         this.missionApplications = res.data
         return res.data
       } catch (e) {
@@ -335,7 +469,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.get(`/api/missions/${missionId}/applications/accepted`)
+        const authStore = useAuthStore();
+        const res = await axios.get(`/api/missions/${missionId}/applications/accepted`, {
+          headers: authStore.authHeader
+        })
         return res.data.freelance
       } catch (e) {
         this.error = e.response?.data?.error || 'Erreur chargement freelance'
@@ -355,7 +492,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.post(`/api/missions/${id}/publish`)
+        const authStore = useAuthStore();
+        const res = await axios.post(`/api/missions/${id}/publish`, {}, {
+          headers: authStore.authHeader
+        })
         
         // Mettre à jour la mission dans myMissions
         this.updateLocalMissionStatus(id, 'open')
@@ -374,7 +514,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.patch(`/api/missions/${id}/status`, { status })
+        const authStore = useAuthStore();
+        const res = await axios.patch(`/api/missions/${id}/status`, { status }, {
+          headers: authStore.authHeader
+        })
         
         // Mettre à jour localement
         this.updateLocalMissionStatus(id, status)
@@ -397,7 +540,11 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.get('/api/missions/available', { params: filters })
+        const authStore = useAuthStore();
+        const res = await axios.get('/api/missions/available', { 
+          params: filters,
+          headers: authStore.authHeader
+        })
         this.availableMissions = res.data
         return res.data
       } catch (e) {
@@ -450,7 +597,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.get(`/api/missions/${id}/completion`)
+        const authStore = useAuthStore();
+        const res = await axios.get(`/api/missions/${id}/completion`, {
+          headers: authStore.authHeader
+        })
         return res.data
       } catch (e) {
         this.error = e.response?.data?.error || 'Erreur chargement détails complétion'
@@ -528,8 +678,10 @@ export const useMissionStore = defineStore('missions', {
     // Télécharger la facture d'une mission
     async downloadInvoice(missionId) {
       try {
+        const authStore = useAuthStore();
         const response = await axios.get(`/api/missions/${missionId}/invoice`, {
-          responseType: 'blob'
+          responseType: 'blob',
+          headers: authStore.authHeader
         })
         
         // Créer un URL pour le fichier blob
@@ -549,7 +701,7 @@ export const useMissionStore = defineStore('missions', {
     },
 
     // ======================
-    // NOUVELLES ACTIONS
+    // ACTIONS DE FILTRAGE
     // ======================
     
     // Définir les filtres
@@ -617,12 +769,11 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
+        const authStore = useAuthStore();
         const response = await axios.get('/api/missions/search/smart', { 
-          params: searchParams 
+          params: searchParams,
+          headers: authStore.authHeader
         })
-        
-        // Note: Vous devrez implémenter cette fonction getUserRole() 
-        // ou utiliser le store auth directement
         
         return response.data
       } catch (error) {
@@ -638,7 +789,10 @@ export const useMissionStore = defineStore('missions', {
       this.loading = true
       this.error = null
       try {
-        const res = await axios.get('/api/missions/stats')
+        const authStore = useAuthStore();
+        const res = await axios.get('/api/missions/stats', {
+          headers: authStore.authHeader
+        })
         return res.data
       } catch (error) {
         this.error = error.response?.data?.error || 'Erreur chargement statistiques'
@@ -647,28 +801,67 @@ export const useMissionStore = defineStore('missions', {
         this.loading = false
       }
     },
-    
-    // Exporter les missions au format CSV
-    async exportMissions(format = 'csv') {
+
+    // ======================
+    // ACTIONS POUR LE DASHBOARD CLIENT
+    // ======================
+
+    // Charger les données pour le dashboard
+    async loadDashboardData() {
       try {
-        const response = await axios.get(`/api/missions/export?format=${format}`, {
-          responseType: 'blob'
-        })
-        
-        const url = window.URL.createObjectURL(new Blob([response.data]))
-        const link = document.createElement('a')
-        link.href = url
-        link.setAttribute('download', `missions-export.${format}`)
-        document.body.appendChild(link)
-        link.click()
-        link.remove()
-        
-        return true
+        await Promise.all([
+          this.fetchMyMissions(),
+          this.fetchClientStats()
+        ]);
+        return {
+          missions: this.myMissions,
+          stats: this.clientStats
+        };
       } catch (error) {
-        console.error('Erreur export missions:', error)
-        throw error
+        console.error('Erreur chargement dashboard:', error);
+        throw error;
       }
     },
+
+    // Obtenir les statistiques pour l'affichage
+    getDashboardStats() {
+      const missions = this.myMissions;
+      
+      return {
+        totalProjects: missions.length,
+        activeProjects: missions.filter(m => 
+          ['open', 'in_progress'].includes(m.status)
+        ).length,
+        completedProjects: missions.filter(m => m.status === 'completed').length,
+        totalSpent: missions
+          .filter(m => m.status === 'completed' && m.budget)
+          .reduce((sum, m) => sum + (m.budget || 0), 0),
+        draftProjects: missions.filter(m => m.status === 'draft').length,
+        openProjects: missions.filter(m => m.status === 'open').length,
+        cancelledProjects: missions.filter(m => m.status === 'cancelled').length
+      };
+    },
+
+    // Filtrer les missions pour le dashboard
+    getFilteredProjects(statusFilter = 'all') {
+      let filtered = this.myMissions;
+      
+      if (statusFilter === 'active') {
+        filtered = filtered.filter(p => ['open', 'in_progress'].includes(p.status));
+      } else if (statusFilter === 'completed') {
+        filtered = filtered.filter(p => p.status === 'completed');
+      } else if (statusFilter === 'draft') {
+        filtered = filtered.filter(p => p.status === 'draft');
+      } else if (statusFilter === 'cancelled') {
+        filtered = filtered.filter(p => p.status === 'cancelled');
+      }
+      
+      return filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    },
+
+    // ======================
+    // GESTION D'ERREURS ET RÉINITIALISATION
+    // ======================
 
     // Réinitialiser le store
     reset() {
@@ -724,6 +917,48 @@ export const useMissionStore = defineStore('missions', {
       if (this.selectedMission?.id === missionId) {
         this.selectedMission = { ...this.selectedMission, ...updatedData }
       }
+    },
+
+    // ======================
+    // MÉTHODES D'AIDE
+    // ======================
+
+    // Formater une mission pour l'affichage
+    formatMissionForDisplay(mission) {
+      if (!mission) return null;
+      
+      return {
+        ...mission,
+        formattedBudget: mission.budget ? `${mission.budget.toLocaleString()} FCFA` : 'Non spécifié',
+        formattedDeadline: mission.deadline ? new Date(mission.deadline).toLocaleDateString() : 'Non spécifié',
+        formattedCreatedAt: mission.created_at ? new Date(mission.created_at).toLocaleDateString() : 'Non spécifié',
+        statusLabel: this.getStatusLabel(mission.status),
+        statusColor: this.getStatusColor(mission.status)
+      };
+    },
+
+    // Obtenir le label d'un statut
+    getStatusLabel(status) {
+      const labels = {
+        draft: 'Brouillon',
+        open: 'Publié',
+        in_progress: 'En cours',
+        completed: 'Terminé',
+        cancelled: 'Annulé'
+      };
+      return labels[status] || status;
+    },
+
+    // Obtenir la couleur d'un statut
+    getStatusColor(status) {
+      const colors = {
+        draft: '#6c757d',
+        open: '#28a745',
+        in_progress: '#007bff',
+        completed: '#17a2b8',
+        cancelled: '#dc3545'
+      };
+      return colors[status] || '#6c757d';
     }
   }
 })
