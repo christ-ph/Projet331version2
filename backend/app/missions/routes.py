@@ -1,4 +1,5 @@
-from flask import Blueprint, Response, request, jsonify, g, current_app as app
+# Vérifiez que vous avez ces imports en haut du fichier
+from flask import Blueprint, Response, request, jsonify, g, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 from sqlalchemy import or_, and_
@@ -7,7 +8,6 @@ import json
 from app import db
 from app.models import Deliverable, DeliverableStatus, FreelanceProfile, Mission, Postulation, MissionStatus, PostulationStatus, User, Profile
 from app.utils import role_required
-
 # Création du blueprint avec le nom spécifique
 missions_bp = Blueprint('missions_bp', __name__)
 
@@ -1444,3 +1444,145 @@ def get_accepted_freelance(mission_id):
         app.logger.error(f"❌ ERROR get_accepted_freelance: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# ============================
+# ROUTES POUR FREELANCE DASHBOARD
+# ============================
+
+@missions_bp.route('/saved', methods=['GET'])
+@jwt_required()
+@role_required(['FREELANCE'])
+def get_saved_missions():
+    """Récupérer les missions sauvegardées par le freelance"""
+    try:
+        current_user_id = get_current_user_id()
+        user = User.query.get(current_user_id)
+        
+        if not user or not hasattr(user, 'saved_missions') or not user.saved_missions:
+            return jsonify([]), 200
+        
+        # Récupérer les missions sauvegardées
+        missions = Mission.query.filter(
+            Mission.id.in_(user.saved_missions),
+            Mission.status == MissionStatus.OPEN
+        ).all()
+        
+        return jsonify([mission_to_dict(mission) for mission in missions]), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"❌ ERROR get_saved_missions: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@missions_bp.route('/<int:mission_id>/save', methods=['POST'])
+@jwt_required()
+@role_required(['FREELANCE'])
+def save_mission(mission_id):
+    """Sauvegarder ou retirer une mission des favoris"""
+    try:
+        current_user_id = get_current_user_id()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'error': 'Utilisateur non trouvé'}), 404
+        
+        # Vérifier que la mission existe
+        mission = Mission.query.get_or_404(mission_id)
+        
+        # Initialiser saved_missions si nécessaire
+        if not hasattr(user, 'saved_missions'):
+            user.saved_missions = []
+        
+        saved_missions = user.saved_missions or []
+        
+        if mission_id in saved_missions:
+            # Retirer de la liste
+            saved_missions = [mid for mid in saved_missions if mid != mission_id]
+            message = 'Mission retirée des favoris'
+        else:
+            # Ajouter à la liste
+            saved_missions.append(mission_id)
+            message = 'Mission sauvegardée'
+        
+        user.saved_missions = saved_missions
+        db.session.commit()
+        
+        return jsonify({
+            'message': message,
+            'mission_id': mission_id,
+            'saved': mission_id in saved_missions,
+            'saved_count': len(saved_missions)
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"❌ ERROR save_mission: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@missions_bp.route('/profile/freelance/skills', methods=['GET'])
+@jwt_required()
+@role_required(['FREELANCE'])
+def get_freelance_skills():
+    """Récupérer les compétences du freelance"""
+    try:
+        current_user_id = get_current_user_id()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'skills': []}), 200
+        
+        # Récupérer les compétences
+        skills = []
+        
+        # Depuis le champ skills de User
+        if hasattr(user, 'skills') and user.skills:
+            if isinstance(user.skills, list):
+                skills = user.skills
+            elif isinstance(user.skills, str):
+                skills = [s.strip() for s in user.skills.split(',')]
+        
+        # Si vide, ajoutez des compétences par défaut
+        if not skills:
+            skills = ['JavaScript', 'Vue.js', 'React', 'Node.js', 'API REST', 'MongoDB']
+        
+        return jsonify({'skills': skills}), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"❌ ERROR get_freelance_skills: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@missions_bp.route('/freelance/stats', methods=['GET'])
+@jwt_required()
+@role_required(['FREELANCE'])
+def get_freelance_stats():
+    """Récupérer les statistiques du freelance"""
+    try:
+        current_user_id = get_current_user_id()
+        
+        # Missions correspondant aux compétences
+        user = User.query.get(current_user_id)
+        user_skills = user.skills if hasattr(user, 'skills') and user.skills else []
+        
+        matching_missions = 0
+        if user_skills:
+            open_missions = Mission.query.filter_by(status=MissionStatus.OPEN).all()
+            for mission in open_missions:
+                if mission.required_skills and any(
+                    skill in user_skills for skill in mission.required_skills
+                ):
+                    matching_missions += 1
+        
+        # Missions sauvegardées
+        saved_count = len(user.saved_missions) if hasattr(user, 'saved_missions') and user.saved_missions else 0
+        
+        # Postulations
+        applications = Postulation.query.filter_by(freelance_id=current_user_id).count()
+        
+        return jsonify({
+            'matching_missions': matching_missions,
+            'saved_missions': saved_count,
+            'applications': applications,
+            'user_skills': user_skills
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"❌ ERROR get_freelance_stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
