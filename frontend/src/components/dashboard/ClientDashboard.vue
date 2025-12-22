@@ -1,12 +1,15 @@
 <script setup>
-// Le script reste identique à celui que vous avez fourni
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useProfileStore } from '@/stores/profile';
+import { useMissionStore } from '@/stores/missions'; // Note: store missions
+import { useFreelancersStore } from '@/stores/freelancers';
 
 const authStore = useAuthStore();
 const profileStore = useProfileStore();
+const missionStore = useMissionStore(); // Renommé pour correspondre au store
+const freelancersStore = useFreelancersStore();
 const router = useRouter();
 
 // Données réactives
@@ -19,8 +22,27 @@ const profile = ref({
   industry: '',
   email: ''
 });
-const activeTab = ref('profile');
+
+const activeTab = ref('projects');
 const showEditModal = ref(false);
+
+// Données réelles
+const stats = ref({
+  totalProjects: 0,
+  activeProjects: 0,
+  completedProjects: 0,
+  totalSpent: 0,
+  draftProjects: 0,
+  cancelledProjects: 0
+});
+
+const projects = ref([]);
+const freelancers = ref([]);
+
+// Filtres
+const projectFilter = ref('all');
+const freelancerFilter = ref('all');
+const freelancerSearch = ref('');
 
 // Options pour les selects
 const clientTypes = ref([
@@ -44,28 +66,6 @@ const industries = ref([
   { value: 'autre', label: 'Autre' }
 ]);
 
-// Données mockées pour les statistiques et projets
-const stats = ref({
-  totalProjects: 12,
-  activeProjects: 3,
-  completedProjects: 9,
-  totalSpent: 1850000,
-  favoriteFreelancers: 5
-});
-
-const recentProjects = ref([
-  { id: 1, title: 'Site e-commerce', freelancer: 'Jean Dupont', status: 'en_cours', budget: 450000, deadline: '15 Mars 2024' },
-  { id: 2, title: 'Application mobile', freelancer: 'Marie Nkono', status: 'termine', budget: 750000, deadline: '10 Mars 2024' },
-  { id: 3, title: 'Logo design', freelancer: 'Paul Mboma', status: 'en_attente', budget: 120000, deadline: '20 Mars 2024' },
-  { id: 4, title: 'Campagne SEO', freelancer: 'Sarah Tchoumi', status: 'en_cours', budget: 300000, deadline: '25 Mars 2024' }
-]);
-
-const favoriteFreelancers = ref([
-  { id: 1, name: 'Jean Dupont', skills: ['Vue.js', 'Node.js'], rating: 4.8, projects: 3 },
-  { id: 2, name: 'Marie Nkono', skills: ['React Native', 'Firebase'], rating: 4.9, projects: 2 },
-  { id: 3, name: 'Paul Mboma', skills: ['Design UI/UX', 'Figma'], rating: 4.7, projects: 4 }
-]);
-
 // Formulaires
 const editForm = ref({});
 
@@ -80,12 +80,53 @@ const industryLabel = computed(() => {
   return industry ? industry.label : profile.value.industry;
 });
 
-// Chargement des données
-onMounted(async () => {
+// Filtres des projets
+const filteredProjects = computed(() => {
+  return missionStore.getFilteredProjects(projectFilter.value);
+});
+
+const filteredFreelancers = computed(() => {
+  let filtered = freelancers.value;
+  
+  // Filtre par recherche
+  if (freelancerSearch.value) {
+    const searchTerm = freelancerSearch.value.toLowerCase();
+    filtered = filtered.filter(f => 
+      f.full_name?.toLowerCase().includes(searchTerm) ||
+      f.title?.toLowerCase().includes(searchTerm) ||
+      f.description?.toLowerCase().includes(searchTerm) ||
+      (f.skills && Array.isArray(f.skills) && 
+        f.skills.some(skill => skill.toLowerCase().includes(searchTerm)))
+    );
+  }
+  
+  // Filtre par disponibilité
+  if (freelancerFilter.value === 'available') {
+    filtered = filtered.filter(f => 
+      f.availability?.toLowerCase() === 'disponible' || 
+      f.availability?.toLowerCase() === 'available'
+    );
+  } else if (freelancerFilter.value === 'top_rated') {
+    filtered = filtered.filter(f => f.rating >= 4);
+  } else if (freelancerFilter.value === 'experienced') {
+    filtered = filtered.filter(f => f.experience_years >= 3);
+  }
+  
+  // Trier par note (meilleurs d'abord)
+  return filtered.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+});
+
+// Fonctions pour charger les données réelles
+async function loadProfile() {
   try {
     const profileData = await profileStore.getMyProfile();
     
-    if (!profileData || profileData.type !== "client") {
+    if (!profileData) {
+      console.error('Aucun profil trouvé');
+      return;
+    }
+
+    if (profileData.type !== "client") {
       router.push('/dashboard');
       return;
     }
@@ -99,11 +140,132 @@ onMounted(async () => {
     editForm.value = { ...profile.value };
 
   } catch (error) {
-    console.error('Erreur lors du chargement:', error);
+    console.error('Erreur lors du chargement du profil:', error);
+    showNotification('Erreur lors du chargement du profil', 'error');
+  }
+}
+
+async function loadProjects() {
+  try {
+    // Utiliser les méthodes du store
+    await missionStore.fetchMyMissions();
+    projects.value = missionStore.myMissions; // Note: myMissions, pas missions
+    
+    // Utiliser les statistiques du store
+    const dashboardStats = missionStore.getDashboardStats();
+    stats.value = {
+      ...stats.value,
+      ...dashboardStats
+    };
+    
+    // Charger les stats client supplémentaires
+    try {
+      const clientStats = await missionStore.fetchClientStats();
+      if (clientStats) {
+        stats.value.totalSpent = clientStats.total_budget || stats.value.totalSpent;
+      }
+    } catch (statsError) {
+      console.log('Stats client non disponibles, utilisation des stats locales');
+    }
+    
+  } catch (error) {
+    console.error('Erreur lors du chargement des projets:', error);
+    showNotification('Erreur lors du chargement des projets', 'error');
+  }
+}
+
+async function loadFreelancers() {
+  try {
+    await freelancersStore.fetchAllFreelancers();
+    freelancers.value = freelancersStore.freelancers;
+    
+  } catch (error) {
+    console.error('Erreur lors du chargement des freelances:', error);
+    showNotification('Erreur lors du chargement des freelances', 'error');
+  }
+}
+
+// Chargement des données optimisé
+async function loadDashboardData() {
+  try {
+    loading.value = true;
+    
+    // Charger le profil en premier
+    await loadProfile();
+    
+    // Charger les autres données en parallèle si le profil est client
+    if (profile.value.type === "client") {
+      await Promise.all([
+        loadProjects(),
+        loadFreelancers()
+      ]);
+    }
+    
+  } catch (error) {
+    console.error('Erreur lors du chargement du dashboard:', error);
+    showNotification('Erreur lors du chargement du dashboard', 'error');
   } finally {
     loading.value = false;
   }
+}
+
+// Initialisation
+onMounted(async () => {
+  await loadDashboardData();
 });
+
+// Fonctions de navigation
+function navigateTo(path) {
+  router.push(path);
+}
+
+function viewMission(missionId) {
+  navigateTo(`/mission/${missionId}`);
+}
+
+function viewFreelancer(freelancerId) {
+  navigateTo(`/freelancer/${freelancerId}`);
+}
+
+function startChatWithFreelancer(freelancerId) {
+  navigateTo(`/chat?freelancer=${freelancerId}`);
+}
+
+// Fonctions de mission
+async function publishMission(missionId) {
+  try {
+    await missionStore.publishMission(missionId);
+    await loadProjects(); // Recharger les projets
+    showNotification('Mission publiée avec succès !', 'success');
+  } catch (error) {
+    console.error('Erreur publication mission:', error);
+    showNotification(error.message || 'Erreur lors de la publication', 'error');
+  }
+}
+
+async function deleteMission(missionId) {
+  if (confirm('Êtes-vous sûr de vouloir supprimer cette mission ? Cette action est irréversible.')) {
+    try {
+      await missionStore.deleteMission(missionId);
+      await loadProjects(); // Recharger les projets
+      showNotification('Mission supprimée avec succès !', 'success');
+    } catch (error) {
+      console.error('Erreur suppression mission:', error);
+      showNotification(error.message || 'Erreur lors de la suppression', 'error');
+    }
+  }
+}
+
+async function updateMissionStatus(missionId, status) {
+  try {
+    await missionStore.changeMissionStatus(missionId, status);
+    await loadProjects(); // Recharger les projets
+    showNotification(`Statut mis à jour: ${getStatusLabel(status)}`, 'success');
+  } catch (error) {
+    console.error('Erreur changement statut mission:', error);
+    showNotification(error.message || 'Erreur lors du changement de statut', 'error');
+  }
+}
 
 // Modal functions
 function openEditProfile() {
@@ -128,22 +290,167 @@ async function saveProfile() {
     closeEditProfile();
   } catch (error) {
     console.error('Erreur mise à jour profil:', error);
-    showNotification('Erreur lors de la mise à jour du profil', 'error');
+    showNotification(error.message || 'Erreur lors de la mise à jour du profil', 'error');
   }
 }
 
-function navigateTo(path) {
-  router.push(path);
+// Fonctions d'export
+async function exportProjects(format = 'pdf', missionId = null) {
+  try {
+    await missionStore.exportMissions(format, missionId);
+    showNotification(`Export ${format.toUpperCase()} réalisé avec succès !`, 'success');
+  } catch (error) {
+    console.error('Erreur export:', error);
+    showNotification(error.message || 'Erreur lors de l\'export', 'error');
+  }
+}
+
+// Fonction pour formater les dates
+function formatDate(dateString) {
+  if (!dateString) return 'Non spécifié';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+}
+
+// Fonction pour obtenir le label du statut
+function getStatusLabel(status) {
+  const labels = {
+    draft: 'Brouillon',
+    open: 'Publié',
+    in_progress: 'En cours',
+    completed: 'Terminé',
+    cancelled: 'Annulé'
+  };
+  return labels[status] || status;
+}
+
+// Fonction pour obtenir la couleur du statut
+function getStatusColor(status) {
+  const colors = {
+    draft: '#6c757d',
+    open: '#28a745',
+    in_progress: '#007bff',
+    completed: '#17a2b8',
+    cancelled: '#dc3545'
+  };
+  return colors[status] || '#6c757d';
+}
+
+// Fonction pour obtenir la couleur de fond du statut
+function getStatusBgColor(status) {
+  const bgColors = {
+    draft: 'rgba(108, 117, 125, 0.1)',
+    open: 'rgba(40, 167, 69, 0.1)',
+    in_progress: 'rgba(0, 123, 255, 0.1)',
+    completed: 'rgba(23, 162, 184, 0.1)',
+    cancelled: 'rgba(220, 53, 69, 0.1)'
+  };
+  return bgColors[status] || 'rgba(108, 117, 125, 0.1)';
 }
 
 // Notification
-const notification = ref({ show: false, message: '', type: '' });
+const notification = reactive({ show: false, message: '', type: '' });
 
 function showNotification(message, type = 'success') {
-  notification.value = { show: true, message, type };
+  notification.show = true;
+  notification.message = message;
+  notification.type = type;
+  
   setTimeout(() => {
-    notification.value.show = false;
+    notification.show = false;
   }, 3000);
+}
+
+// Fonction pour charger plus de freelances
+async function loadMoreFreelancers() {
+  try {
+    const currentPage = freelancersStore.pagination.page;
+    await freelancersStore.searchFreelancers({ 
+      page: currentPage + 1,
+      per_page: 20
+    });
+    
+    // Ajouter les nouveaux freelances à la liste
+    freelancers.value = [...freelancers.value, ...freelancersStore.freelancers];
+    showNotification(`${freelancersStore.freelancers.length} freelances supplémentaires chargés`, 'info');
+  } catch (error) {
+    console.error('Erreur lors du chargement des freelances supplémentaires:', error);
+    showNotification('Erreur lors du chargement des freelances supplémentaires', 'error');
+  }
+}
+
+// Fonction de recherche de freelances avec debounce
+let searchTimeout = null;
+async function searchFreelancers() {
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+  }
+  
+  searchTimeout = setTimeout(async () => {
+    try {
+      if (freelancerSearch.value.trim()) {
+        await freelancersStore.searchFreelancers({ q: freelancerSearch.value });
+        freelancers.value = freelancersStore.freelancers;
+        showNotification(`${freelancers.value.length} freelances trouvés`, 'info');
+      } else {
+        // Si la recherche est vide, recharger tous les freelances
+        await freelancersStore.fetchAllFreelancers();
+        freelancers.value = freelancersStore.freelancers;
+      }
+    } catch (error) {
+      console.error('Erreur lors de la recherche:', error);
+      showNotification('Erreur lors de la recherche de freelances', 'error');
+    }
+  }, 500); // 500ms de délai
+}
+
+// Fonction pour rafraîchir toutes les données
+async function refreshDashboard() {
+  try {
+    loading.value = true;
+    showNotification('Rafraîchissement des données...', 'info');
+    
+    await Promise.all([
+      loadProfile(),
+      loadProjects(),
+      loadFreelancers()
+    ]);
+    
+    showNotification('Données rafraîchies avec succès !', 'success');
+  } catch (error) {
+    console.error('Erreur rafraîchissement dashboard:', error);
+    showNotification('Erreur lors du rafraîchissement', 'error');
+  } finally {
+    loading.value = false;
+  }
+}
+
+// Fonction pour créer une nouvelle mission
+function createNewMission() {
+  navigateTo('/mission/create');
+}
+
+// Fonction pour formater le budget
+function formatBudget(budget) {
+  if (!budget) return 'Non spécifié';
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'XOF',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(budget);
+}
+
+// Fonction pour obtenir les compétences d'une mission
+function getMissionSkills(mission) {
+  if (!mission.required_skills || !Array.isArray(mission.required_skills)) {
+    return [];
+  }
+  return mission.required_skills.slice(0, 3); // Maximum 3 compétences
 }
 </script>
 
@@ -159,7 +466,7 @@ function showNotification(message, type = 'success') {
       <div class="loading-spinner">
         <i class="fas fa-spinner fa-spin"></i>
       </div>
-      <p>Chargement de votre profil...</p>
+      <p>Chargement de votre dashboard...</p>
     </div>
 
     <!-- Contenu principal -->
@@ -180,7 +487,7 @@ function showNotification(message, type = 'success') {
           @click="activeTab = 'projects'"
         >
           <i class="fas fa-briefcase"></i>
-          <span>Mes Projets</span>
+          <span>Projets</span>
           <span class="tab-badge">{{ stats.totalProjects }}</span>
         </button>
         <button 
@@ -190,15 +497,7 @@ function showNotification(message, type = 'success') {
         >
           <i class="fas fa-users"></i>
           <span>Freelances</span>
-          <span class="tab-badge">{{ stats.favoriteFreelancers }}</span>
-        </button>
-        <button 
-          class="tab-btn" 
-          :class="{ 'active': activeTab === 'stats' }"
-          @click="activeTab = 'stats'"
-        >
-          <i class="fas fa-chart-line"></i>
-          <span>Statistiques</span>
+          <span class="tab-badge">{{ freelancers.length }}</span>
         </button>
       </div>
 
@@ -238,7 +537,7 @@ function showNotification(message, type = 'success') {
                 <i class="fas fa-edit"></i>
                 Modifier le profil
               </button>
-              <button class="action-btn outline-btn" @click="navigateTo('/missions/create')">
+              <button class="action-btn outline-btn" @click="navigateTo('/mission/create')">
                 <i class="fas fa-plus"></i>
                 Nouveau projet
               </button>
@@ -339,73 +638,6 @@ function showNotification(message, type = 'success') {
             </div>
           </div>
 
-          <!-- Projets récents -->
-          <div class="detail-card recent-projects-card">
-            <div class="card-header">
-              <h3>
-                <i class="fas fa-clock"></i>
-                Projets récents
-              </h3>
-              <button class="card-action-btn" @click="navigateTo('/client/missions')">
-                <i class="fas fa-external-link-alt"></i>
-              </button>
-            </div>
-            <div class="card-content">
-              <div class="projects-list">
-                <div v-for="project in recentProjects.slice(0, 3)" :key="project.id" class="project-item">
-                  <div class="project-info">
-                    <h4 class="project-title">{{ project.title }}</h4>
-                    <p class="project-freelancer">
-                      <i class="fas fa-user"></i>
-                      {{ project.freelancer }}
-                    </p>
-                  </div>
-                  <div class="project-meta">
-                    <span class="project-budget">{{ project.budget.toLocaleString() }} FCFA</span>
-                    <span class="project-status" :class="project.status">
-                      {{ project.status === 'en_cours' ? 'En cours' : 
-                         project.status === 'termine' ? 'Terminé' : 'En attente' }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Freelances favoris -->
-          <div class="detail-card favorites-card">
-            <div class="card-header">
-              <h3>
-                <i class="fas fa-star"></i>
-                Freelances favoris
-              </h3>
-              <button class="card-action-btn" @click="navigateTo('/freelances')">
-                <i class="fas fa-external-link-alt"></i>
-              </button>
-            </div>
-            <div class="card-content">
-              <div class="freelancers-list">
-                <div v-for="freelancer in favoriteFreelancers" :key="freelancer.id" class="freelancer-item">
-                  <div class="freelancer-avatar">
-                    {{ freelancer.name.charAt(0) }}
-                  </div>
-                  <div class="freelancer-info">
-                    <h4 class="freelancer-name">{{ freelancer.name }}</h4>
-                    <div class="freelancer-skills">
-                      <span v-for="skill in freelancer.skills.slice(0, 2)" :key="skill" class="skill-tag">
-                        {{ skill }}
-                      </span>
-                    </div>
-                  </div>
-                  <div class="freelancer-rating">
-                    <i class="fas fa-star"></i>
-                    <span>{{ freelancer.rating }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- Actions rapides -->
           <div class="detail-card quick-actions-card">
             <div class="card-header">
@@ -416,7 +648,7 @@ function showNotification(message, type = 'success') {
             </div>
             <div class="card-content">
               <div class="actions-grid">
-                <button class="action-card" @click="navigateTo('/missions/create')">
+                <button class="action-card" @click="navigateTo('/mission/create')">
                   <div class="action-icon">
                     <i class="fas fa-plus-circle"></i>
                   </div>
@@ -426,7 +658,7 @@ function showNotification(message, type = 'success') {
                   </div>
                 </button>
                 
-                <button class="action-card" @click="navigateTo('/freelances')">
+                <button class="action-card" @click="activeTab = 'freelancers'">
                   <div class="action-icon">
                     <i class="fas fa-search"></i>
                   </div>
@@ -436,7 +668,7 @@ function showNotification(message, type = 'success') {
                   </div>
                 </button>
                 
-                <button class="action-card" @click="navigateTo('/messages')">
+                <button class="action-card" @click="navigateTo('/chat')">
                   <div class="action-icon">
                     <i class="fas fa-comments"></i>
                   </div>
@@ -446,7 +678,7 @@ function showNotification(message, type = 'success') {
                   </div>
                 </button>
                 
-                <button class="action-card" @click="navigateTo('/client/missions')">
+                <button class="action-card" @click="activeTab = 'projects'">
                   <div class="action-icon">
                     <i class="fas fa-list-check"></i>
                   </div>
@@ -470,76 +702,149 @@ function showNotification(message, type = 'success') {
               Mes Projets
             </h2>
             <p class="section-subtitle">
-              Gérez toutes vos missions et collaborations
+              {{ stats.totalProjects }} projet{{ stats.totalProjects !== 1 ? 's' : '' }} au total
             </p>
           </div>
-          <button class="add-project-btn" @click="navigateTo('/missions/create')">
+          <div class="section-actions">
+            <button class="action-btn outline-btn" @click="exportProjects('pdf')" title="Exporter en PDF">
+              <i class="fas fa-file-pdf"></i>
+            </button>
+            <button class="add-project-btn" @click="navigateTo('/mission/create')">
+              <i class="fas fa-plus"></i>
+              Nouveau projet
+            </button>
+          </div>
+        </div>
+
+        <div v-if="projects.length === 0" class="empty-state">
+          <div class="empty-icon">
+            <i class="fas fa-briefcase"></i>
+          </div>
+          <h3>Aucun projet disponible</h3>
+          <p>Commencez par créer votre premier projet pour trouver des freelances talentueux</p>
+          <button class="action-btn primary-btn" @click="navigateTo('/mission/create')">
             <i class="fas fa-plus"></i>
-            Nouveau projet
+            Créer un projet
           </button>
         </div>
 
-        <div class="projects-filters">
-          <button class="filter-btn active">Tous ({{ recentProjects.length }})</button>
-          <button class="filter-btn">En cours ({{ recentProjects.filter(p => p.status === 'en_cours').length }})</button>
-          <button class="filter-btn">Terminés ({{ recentProjects.filter(p => p.status === 'termine').length }})</button>
-          <button class="filter-btn">En attente ({{ recentProjects.filter(p => p.status === 'en_attente').length }})</button>
-        </div>
+        <div v-else>
+          <div class="projects-filters">
+            <button 
+              class="filter-btn" 
+              :class="{ 'active': projectFilter === 'all' }"
+              @click="projectFilter = 'all'"
+            >
+              Tous ({{ projects.length }})
+            </button>
+            <button 
+              class="filter-btn" 
+              :class="{ 'active': projectFilter === 'active' }"
+              @click="projectFilter = 'active'"
+            >
+              Actifs ({{ stats.activeProjects }})
+            </button>
+            <button 
+              class="filter-btn" 
+              :class="{ 'active': projectFilter === 'completed' }"
+              @click="projectFilter = 'completed'"
+            >
+              Terminés ({{ stats.completedProjects }})
+            </button>
+            <button 
+              class="filter-btn" 
+              :class="{ 'active': projectFilter === 'draft' }"
+              @click="projectFilter = 'draft'"
+            >
+              Brouillons ({{ projects.filter(p => p.status === 'draft').length }})
+            </button>
+          </div>
 
-        <div class="projects-grid">
-          <div 
-            v-for="project in recentProjects" 
-            :key="project.id" 
-            class="project-card"
-            @click="navigateTo(`/project/${project.id}`)"
-          >
-            <div class="project-header">
-              <div class="project-status-badge" :class="project.status">
-                {{ project.status === 'en_cours' ? 'En cours' : 
-                   project.status === 'termine' ? 'Terminé' : 'En attente' }}
+          <div class="projects-grid">
+            <div 
+              v-for="project in filteredProjects" 
+              :key="project.id" 
+              class="project-card"
+            >
+              <div class="project-header">
+                <div class="project-status-badge" :class="project.status">
+                  {{ 
+                    project.status === 'draft' ? 'Brouillon' :
+                    project.status === 'open' ? 'Publié' :
+                    project.status === 'in_progress' ? 'En cours' :
+                    project.status === 'completed' ? 'Terminé' : 'Annulé'
+                  }}
+                </div>
+                <div class="project-actions">
+                  <div class="dropdown">
+                    <button class="icon-btn">
+                      <i class="fas fa-ellipsis-v"></i>
+                    </button>
+                    <div class="dropdown-menu">
+                      <button @click="viewMission(project.id)" class="dropdown-item">
+                        <i class="fas fa-eye"></i> Voir détails
+                      </button>
+                      <button v-if="project.status === 'draft'" 
+                        @click="publishMission(project.id)" 
+                        class="dropdown-item">
+                        <i class="fas fa-paper-plane"></i> Publier
+                      </button>
+                      <button v-if="project.status === 'draft' || project.status === 'open'" 
+                        @click="navigateTo(`/mission/edit/${project.id}`)" 
+                        class="dropdown-item">
+                        <i class="fas fa-edit"></i> Modifier
+                      </button>
+                      <button v-if="project.status === 'draft'" 
+                        @click="deleteMission(project.id)" 
+                        class="dropdown-item text-danger">
+                        <i class="fas fa-trash"></i> Supprimer
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="project-actions">
-                <button class="icon-btn">
-                  <i class="fas fa-ellipsis-v"></i>
+              
+              <h3 class="project-title">{{ project.title }}</h3>
+              <p class="project-description" v-if="project.description">
+                {{ project.description.substring(0, 150) }}...
+              </p>
+              
+              <div class="project-meta">
+                <div class="meta-item" v-if="project.budget">
+                  <i class="fas fa-money-bill-wave"></i>
+                  <span>{{ project.budget.toLocaleString() }} FCFA</span>
+                </div>
+                <div class="meta-item" v-if="project.deadline">
+                  <i class="far fa-calendar-alt"></i>
+                  <span>{{ new Date(project.deadline).toLocaleDateString() }}</span>
+                </div>
+                <div class="meta-item">
+                  <i class="fas fa-clock"></i>
+                  <span>{{ new Date(project.created_at).toLocaleDateString() }}</span>
+                </div>
+              </div>
+              
+              <div class="project-skills" v-if="project.required_skills && project.required_skills.length > 0">
+                <span v-for="skill in project.required_skills.slice(0, 3)" :key="skill" class="skill-tag">
+                  {{ skill }}
+                </span>
+                <span v-if="project.required_skills.length > 3" class="skill-tag more">
+                  +{{ project.required_skills.length - 3 }}
+                </span>
+              </div>
+              
+              <div class="project-actions-footer">
+                <button class="action-btn outline-btn small" @click="viewMission(project.id)">
+                  <i class="fas fa-eye"></i>
+                  Voir détails
+                </button>
+                <button v-if="project.status === 'in_progress'" 
+                  class="action-btn primary-btn small" 
+                  @click="navigateTo(`/chat/${useAuthStore().user.id}`)">
+                  <i class="fas fa-comment"></i>
+                  Message
                 </button>
               </div>
-            </div>
-            
-            <h3 class="project-title">{{ project.title }}</h3>
-            
-            <div class="project-freelancer-info">
-              <div class="freelancer-avatar small">
-                {{ project.freelancer.charAt(0) }}
-              </div>
-              <div class="freelancer-details">
-                <p class="freelancer-name">{{ project.freelancer }}</p>
-                <p class="project-deadline">
-                  <i class="far fa-calendar-alt"></i>
-                  {{ project.deadline }}
-                </p>
-              </div>
-            </div>
-            
-            <div class="project-meta">
-              <div class="meta-item">
-                <i class="fas fa-money-bill-wave"></i>
-                <span>{{ project.budget.toLocaleString() }} FCFA</span>
-              </div>
-              <div class="meta-item">
-                <i class="fas fa-clock"></i>
-                <span>2 semaines</span>
-              </div>
-            </div>
-            
-            <div class="project-actions-footer">
-              <button class="action-btn outline-btn small" @click.stop="navigateTo(`/project/${project.id}`)">
-                <i class="fas fa-eye"></i>
-                Voir détails
-              </button>
-              <button class="action-btn primary-btn small" @click.stop="navigateTo(`/messages?project=${project.id}`)">
-                <i class="fas fa-comment"></i>
-                Message
-              </button>
             </div>
           </div>
         </div>
@@ -551,125 +856,119 @@ function showNotification(message, type = 'success') {
           <div>
             <h2 class="section-title">
               <i class="fas fa-users"></i>
-              Freelances
+              Tous les Freelances
             </h2>
             <p class="section-subtitle">
-              Découvrez les meilleurs talents pour vos projets
+              {{ freelancers.length }} freelance{{ freelancers.length !== 1 ? 's' : '' }} disponible{{ freelancers.length !== 1 ? 's' : '' }}
             </p>
           </div>
-          <button class="add-project-btn" @click="navigateTo('/freelances')">
-            <i class="fas fa-search"></i>
-            Voir tous
-          </button>
+          <div class="search-bar">
+            <div class="search-input-container">
+              <i class="fas fa-search"></i>
+              <input 
+                type="text" 
+                v-model="freelancerSearch" 
+                @input="searchFreelancers"
+                placeholder="Rechercher un freelance..."
+                class="search-input"
+              />
+            </div>
+            <select v-model="freelancerFilter" class="filter-select">
+              <option value="all">Tous</option>
+              <option value="top_rated">Top notés (4+ étoiles)</option>
+              <option value="experienced">Expérimentés (3+ ans)</option>
+              <option value="available">Disponibles</option>
+            </select>
+          </div>
         </div>
 
-        <div class="freelancers-grid">
+        <div v-if="freelancers.length === 0" class="empty-state">
+          <div class="empty-icon">
+            <i class="fas fa-users"></i>
+          </div>
+          <h3>Aucun freelance disponible</h3>
+          <p>Les freelances s'afficheront ici une fois inscrits sur la plateforme</p>
+        </div>
+
+        <div v-else class="freelancers-grid">
           <div 
-            v-for="freelancer in favoriteFreelancers" 
+            v-for="freelancer in filteredFreelancers" 
             :key="freelancer.id" 
             class="freelancer-card"
           >
             <div class="freelancer-header">
               <div class="freelancer-avatar large">
-                {{ freelancer.name.charAt(0) }}
+                {{ freelancer.full_name?.charAt(0)?.toUpperCase() || 'F' }}
               </div>
-              <div class="freelancer-rating-badge">
+              <div class="freelancer-rating" v-if="freelancer.rating">
                 <i class="fas fa-star"></i>
-                {{ freelancer.rating }}
+                <span>{{ freelancer.rating.toFixed(1) }}</span>
+                <span class="rating-count">({{ freelancer.completed_projects || 0 }})</span>
               </div>
             </div>
             
-            <h3 class="freelancer-name">{{ freelancer.name }}</h3>
+            <h3 class="freelancer-name">{{ freelancer.full_name || 'Freelance' }}</h3>
+            <p class="freelancer-title">{{ freelancer.title || 'Freelance' }}</p>
             
-            <div class="freelancer-skills-list">
-              <span v-for="skill in freelancer.skills" :key="skill" class="skill-tag">
+            <div class="freelancer-skills-list" v-if="freelancer.skills && freelancer.skills.length > 0">
+              <span v-for="skill in freelancer.skills.slice(0, 3)" :key="skill" class="skill-tag">
                 {{ skill }}
+              </span>
+              <span v-if="freelancer.skills.length > 3" class="skill-tag more">
+                +{{ freelancer.skills.length - 3 }}
               </span>
             </div>
             
             <div class="freelancer-stats">
               <div class="stat">
-                <span class="stat-number">{{ freelancer.projects }}</span>
-                <span class="stat-label">projets</span>
+                <i class="fas fa-money-bill"></i>
+                <div>
+                  <span class="stat-number">{{ freelancer.hourly_rate?.toLocaleString() || 'N/A' }}</span>
+                  <span class="stat-label">FCFA/h</span>
+                </div>
               </div>
               <div class="stat">
-                <span class="stat-number">95%</span>
-                <span class="stat-label">satisfaction</span>
+                <i class="fas fa-history"></i>
+                <div>
+                  <span class="stat-number">{{ freelancer.experience_years || 0 }}</span>
+                  <span class="stat-label">ans</span>
+                </div>
               </div>
               <div class="stat">
-                <span class="stat-number">2</span>
-                <span class="stat-label">semaines</span>
+                <i class="fas fa-check-circle"></i>
+                <div>
+                  <span class="stat-number">{{ freelancer.completed_projects || 0 }}</span>
+                  <span class="stat-label">projets</span>
+                </div>
               </div>
             </div>
             
             <div class="freelancer-actions">
-              <button class="action-btn outline-btn" @click="navigateTo(`/freelancer/${freelancer.id}`)">
+              <button class="action-btn outline-btn" @click="viewFreelancer(freelancer.id)">
                 <i class="fas fa-eye"></i>
                 Voir profil
               </button>
-              <button class="action-btn primary-btn" @click="navigateTo(`/messages?freelancer=${freelancer.id}`)">
+              <button class="action-btn primary-btn" @click="startChatWithFreelancer(freelancer.id)">
                 <i class="fas fa-comment"></i>
                 Contacter
               </button>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- SECTION STATISTIQUES -->
-      <div v-else class="stats-section">
-        <div class="section-header">
-          <h2 class="section-title">
-            <i class="fas fa-chart-line"></i>
-            Mes Statistiques
-          </h2>
-        </div>
-        
-        <div class="stats-cards">
-          <div class="stats-card main">
-            <h3>Performance globale</h3>
-            <div class="stats-metrics">
-              <div class="metric">
-                <span class="metric-value">{{ stats.totalProjects }}</span>
-                <span class="metric-label">Projets</span>
-              </div>
-              <div class="metric">
-                <span class="metric-value">{{ stats.totalSpent.toLocaleString() }} FCFA</span>
-                <span class="metric-label">Investis</span>
-              </div>
-              <div class="metric">
-                <span class="metric-value">4.7</span>
-                <span class="metric-label">Note moyenne</span>
-              </div>
-            </div>
-          </div>
-          
-          <div class="stats-card">
-            <h3>Activité récente</h3>
-            <div class="activity-list">
-              <div class="activity-item">
-                <i class="fas fa-file-contract info"></i>
-                <div>
-                  <p>Nouveau projet "Refonte site web"</p>
-                  <span class="activity-time">Il y a 2 jours</span>
-                </div>
-              </div>
-              <div class="activity-item">
-                <i class="fas fa-money-bill-wave success"></i>
-                <div>
-                  <p>Paiement envoyé à Jean Dupont</p>
-                  <span class="activity-time">Il y a 3 jours</span>
-                </div>
-              </div>
-              <div class="activity-item">
-                <i class="fas fa-comment warning"></i>
-                <div>
-                  <p>Nouveau message de Marie Nkono</p>
-                  <span class="activity-time">Il y a 5 jours</span>
-                </div>
-              </div>
-            </div>
-          </div>
+        <!-- Bouton charger plus -->
+        <div v-if="freelancersStore.pagination.page < freelancersStore.pagination.pages" 
+          class="load-more-container">
+          <button class="load-more-btn" @click="loadMoreFreelancers" :disabled="freelancersStore.loading">
+            <span v-if="freelancersStore.loading">
+              <i class="fas fa-spinner fa-spin"></i>
+              Chargement...
+            </span>
+            <span v-else>
+              <i class="fas fa-plus"></i>
+              Charger plus de freelances
+            </span>
+          </button>
         </div>
       </div>
     </div>
@@ -780,7 +1079,8 @@ function showNotification(message, type = 'success') {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   min-height: 100vh;
   background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  padding: 20px;
+  padding: 40px;
+  margin-top: 70px;
 }
 
 /* ==================== NOTIFICATIONS ==================== */
@@ -853,6 +1153,41 @@ function showNotification(message, type = 'success') {
   color: #2D3047;
   font-size: 1.2rem;
   font-weight: 500;
+}
+
+/* ==================== EMPTY STATE ==================== */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+  border: 2px solid #f1f5f9;
+}
+
+.empty-icon {
+  font-size: 4rem;
+  color: #FF6B35;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #FF6B35, #FF8E53);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.empty-state h3 {
+  font-size: 1.8rem;
+  color: #2D3047;
+  margin: 0 0 10px 0;
+}
+
+.empty-state p {
+  color: #6c757d;
+  font-size: 1.1rem;
+  margin-bottom: 30px;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* ==================== CONTAINER ==================== */
@@ -1334,198 +1669,6 @@ function showNotification(message, type = 'success') {
   font-size: 0.8rem;
 }
 
-/* Projects List */
-.projects-list {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-
-.project-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px;
-  background: #f8fafc;
-  border-radius: 10px;
-  border: 2px solid #f1f5f9;
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.project-item:hover {
-  border-color: #FF6B35;
-  transform: translateX(8px);
-}
-
-.project-info {
-  flex: 1;
-}
-
-.project-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #2D3047;
-  margin: 0 0 5px 0;
-}
-
-.project-freelancer {
-  font-size: 0.9rem;
-  color: #6c757d;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-}
-
-.project-freelancer i {
-  color: #FF6B35;
-  font-size: 0.8rem;
-}
-
-.project-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 5px;
-}
-
-.project-budget {
-  font-weight: 600;
-  color: #10B981;
-  font-size: 0.95rem;
-}
-
-.project-status {
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.project-status.en_cours {
-  background: #DBEAFE;
-  color: #1E40AF;
-}
-
-.project-status.termine {
-  background: #D1FAE5;
-  color: #065F46;
-}
-
-.project-status.en_attente {
-  background: #FEF3C7;
-  color: #92400E;
-}
-
-/* Freelancers List */
-.freelancers-list {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-
-.freelancer-item {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  padding: 15px;
-  background: #f8fafc;
-  border-radius: 10px;
-  border: 2px solid #f1f5f9;
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.freelancer-item:hover {
-  border-color: #FF6B35;
-  transform: translateX(8px);
-}
-
-.freelancer-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #FF6B35, #FF8E53);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 1.1rem;
-  flex-shrink: 0;
-  border: 2px solid white;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-}
-
-.freelancer-avatar.small {
-  width: 30px;
-  height: 30px;
-  font-size: 0.9rem;
-}
-
-.freelancer-avatar.large {
-  width: 60px;
-  height: 60px;
-  font-size: 1.5rem;
-}
-
-.freelancer-info {
-  flex: 1;
-}
-
-.freelancer-name {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #2D3047;
-  margin: 0 0 5px 0;
-}
-
-.freelancer-skills {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.skill-tag {
-  padding: 4px 12px;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 15px;
-  font-size: 0.8rem;
-  color: #6c757d;
-  font-weight: 500;
-  transition: all 0.3s ease;
-}
-
-.skill-tag:hover {
-  border-color: #FF6B35;
-  color: #FF6B35;
-  transform: translateY(-1px);
-}
-
-.freelancer-rating {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: #F59E0B;
-  font-weight: 600;
-  padding: 6px 12px;
-  background: rgba(245, 158, 11, 0.1);
-  border-radius: 20px;
-}
-
-.freelancer-rating-badge {
-  padding: 6px 12px;
-  background: #FEF3C7;
-  color: #92400E;
-  border-radius: 20px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
 /* Actions Grid */
 .actions-grid {
   display: grid;
@@ -1921,169 +2064,6 @@ function showNotification(message, type = 'success') {
   margin-top: 20px;
 }
 
-/* ==================== STATS SECTION ==================== */
-.stats-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-  gap: 25px;
-}
-
-.stats-card {
-  background: white;
-  border-radius: 20px;
-  padding: 25px;
-  border: 2px solid #f1f5f9;
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  position: relative;
-  overflow: hidden;
-}
-
-.stats-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 3px;
-  background: linear-gradient(135deg, #FF6B35, #FF8E53);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.4s ease;
-}
-
-.stats-card:hover::before {
-  transform: scaleX(1);
-}
-
-.stats-card.main {
-  background: linear-gradient(135deg, #2D3047 0%, #1A1C2E 100%);
-  color: white;
-  border: none;
-}
-
-.stats-card h3 {
-  font-size: 1.3rem;
-  margin: 0 0 25px 0;
-  color: #2D3047;
-  position: relative;
-  padding-bottom: 15px;
-}
-
-.stats-card h3::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 40px;
-  height: 3px;
-  background: #FF6B35;
-  border-radius: 2px;
-}
-
-.stats-card.main h3 {
-  color: white;
-}
-
-.stats-card.main h3::after {
-  background: #FFD166;
-}
-
-.stats-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-
-.metric {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 20px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 15px;
-  transition: all 0.3s ease;
-}
-
-.metric:hover {
-  background: rgba(255, 255, 255, 0.2);
-  transform: translateY(-5px);
-}
-
-.metric-value {
-  font-size: 2.5rem;
-  font-weight: 700;
-  margin-bottom: 5px;
-  line-height: 1;
-}
-
-.stats-card.main .metric-value {
-  color: #FFD166;
-}
-
-.metric-label {
-  font-size: 0.9rem;
-  color: #6c757d;
-  font-weight: 500;
-}
-
-.stats-card.main .metric-label {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.activity-list {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.activity-item {
-  display: flex;
-  gap: 15px;
-  align-items: flex-start;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #e5e7eb;
-  transition: all 0.3s ease;
-}
-
-.activity-item:hover {
-  transform: translateX(5px);
-}
-
-.activity-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.activity-item i {
-  font-size: 1.2rem;
-  margin-top: 3px;
-  flex-shrink: 0;
-}
-
-.activity-item i.success {
-  color: #10B981;
-}
-
-.activity-item i.info {
-  color: #3B82F6;
-}
-
-.activity-item i.warning {
-  color: #F59E0B;
-}
-
-.activity-item p {
-  margin: 0 0 5px 0;
-  color: #2D3047;
-  font-weight: 500;
-}
-
-.activity-time {
-  font-size: 0.85rem;
-  color: #6c757d;
-}
-
 /* ==================== MODALS ==================== */
 .modal-overlay {
   position: fixed;
@@ -2321,14 +2301,6 @@ function showNotification(message, type = 'success') {
   .profile-details-grid {
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   }
-  
-  .stats-cards {
-    grid-template-columns: 1fr;
-  }
-  
-  .stats-metrics {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 
 /* Tablette en mode portrait */
@@ -2441,10 +2413,6 @@ function showNotification(message, type = 'success') {
     grid-template-columns: 1fr;
   }
   
-  .stats-metrics {
-    grid-template-columns: 1fr;
-  }
-  
   .modal-body {
     padding: 20px;
   }
@@ -2474,8 +2442,6 @@ function showNotification(message, type = 'success') {
   .stat-card:hover,
   .detail-card:hover,
   .info-item:hover,
-  .project-item:hover,
-  .freelancer-item:hover,
   .action-card:hover {
     transform: none;
   }
@@ -2498,7 +2464,6 @@ function showNotification(message, type = 'success') {
   .section-header,
   .project-card,
   .freelancer-card,
-  .stats-card,
   .modal {
     background: #2d2d2d;
     border-color: #404040;
@@ -2507,8 +2472,6 @@ function showNotification(message, type = 'success') {
   
   .stat-card,
   .info-item,
-  .project-item,
-  .freelancer-item,
   .action-card,
   .project-freelancer-info,
   .meta-item {
@@ -2522,19 +2485,248 @@ function showNotification(message, type = 'success') {
   .info-value,
   .project-title,
   .freelancer-name,
-  .stat-value,
-  .metric-value {
+  .stat-value {
     color: #e4e4e4;
   }
   
   .profile-title,
   .section-subtitle,
   .info-label,
-  .project-freelancer,
-  .stat-label,
-  .metric-label,
-  .activity-time {
+  .project-deadline,
+  .stat-label {
     color: #a0a0a0;
   }
 }
+
+
+
+.section-actions {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
+.search-bar {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
+.search-input-container {
+  position: relative;
+  flex: 1;
+  max-width: 400px;
+}
+
+.search-input-container i {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #6c757d;
+}
+
+.search-input {
+  width: 100%;
+  padding: 12px 20px 12px 45px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #FF6B35;
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
+}
+
+.filter-select {
+  padding: 12px 20px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: white;
+  color: #2D3047;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #FF6B35;
+}
+
+.project-description {
+  color: #6c757d;
+  margin: 10px 0 15px 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.project-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 15px 0;
+}
+
+.skill-tag {
+  padding: 6px 12px;
+  background: #f1f5f9;
+  color: #2D3047;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.skill-tag.more {
+  background: #FF6B35;
+  color: white;
+}
+
+.freelancer-title {
+  color: #6c757d;
+  font-size: 0.95rem;
+  margin: 5px 0 15px 0;
+  text-align: center;
+}
+
+.freelancer-rating {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #f8f9fa;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-weight: 600;
+  color: #2D3047;
+}
+
+.freelancer-rating i {
+  color: #FFC107;
+}
+
+.rating-count {
+  color: #6c757d;
+  font-size: 0.85rem;
+}
+
+.freelancer-stats {
+  display: flex;
+  justify-content: space-around;
+  margin: 20px 0;
+  gap: 15px;
+}
+
+.freelancer-stats .stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.freelancer-stats .stat i {
+  color: #FF6B35;
+  font-size: 1rem;
+}
+
+.freelancer-stats .stat-number {
+  font-weight: 700;
+  color: #2D3047;
+  display: block;
+  font-size: 0.9rem;
+}
+
+.freelancer-stats .stat-label {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  border: 1px solid #e5e7eb;
+  min-width: 180px;
+  z-index: 10;
+  display: none;
+  padding: 8px 0;
+}
+
+.dropdown:hover .dropdown-menu {
+  display: block;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 15px;
+  background: none;
+  border: none;
+  text-align: left;
+  color: #2D3047;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dropdown-item:hover {
+  background: #f8f9fa;
+  color: #FF6B35;
+}
+
+.dropdown-item i {
+  width: 16px;
+}
+
+.dropdown-item.text-danger {
+  color: #EF4444;
+}
+
+.dropdown-item.text-danger:hover {
+  color: #DC2626;
+  background: #FEE2E2;
+}
+
+.load-more-container {
+  text-align: center;
+  margin-top: 40px;
+  padding: 20px 0;
+}
+
+.load-more-btn {
+  padding: 12px 30px;
+  background: linear-gradient(135deg, #FF6B35, #FF8E53);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.load-more-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 30px rgba(255, 107, 53, 0.3);
+}
+
+.load-more-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+
 </style>
