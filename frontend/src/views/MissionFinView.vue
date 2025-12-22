@@ -481,21 +481,21 @@
             <p>Dupliquez cette mission pour un nouveau projet</p>
           </div>
           
-          <div class="action-card" @click="rehireFreelance" v-if="freelance">
+          <!-- <div class="action-card" @click="rehireFreelance" v-if="freelance">
             <div class="action-icon">
               <i class="fas fa-user-plus"></i>
             </div>
             <h4>Retravailler avec {{ freelance.full_name?.split(' ')[0] || 'ce freelance' }}</h4>
             <p>Créez une nouvelle mission pour le même freelance</p>
-          </div>
+          </div> -->
 
-          <div class="action-card" @click="exportMissionReport">
+          <!-- <div class="action-card" @click="exportMissionReport">
             <div class="action-icon">
               <i class="fas fa-file-contract"></i>
             </div>
             <h4>Générer un rapport complet</h4>
             <p>PDF détaillé avec statistiques et livrables</p>
-          </div>
+          </div> -->
 
           <div class="action-card" @click="viewAllMissions">
             <div class="action-icon">
@@ -520,9 +520,9 @@
             <button class="btn-primary" @click="viewAllMissions">
               <i class="fas fa-arrow-left"></i> Retour aux missions
             </button>
-            <button class="btn-secondary" @click="contactSupport">
+            <!-- <button class="btn-secondary" @click="contactSupport">
               <i class="fas fa-headset"></i> Support
-            </button>
+            </button> -->
           </div>
         </div>
       </div>
@@ -882,9 +882,9 @@ const exportMission = async (format) => {
   }
 }
 
-const exportMissionReport = () => {
-  exportMission('pdf')
-}
+// const exportMissionReport = () => {
+//   exportMission('pdf')
+// }
 
 const viewFreelanceProfile = () => {
   if (freelance.value?.id) {
@@ -936,7 +936,7 @@ const downloadDeliverable = async (deliverable) => {
 const downloadAllDeliverables = async () => {
   try {
     const token = authStore.token || localStorage.getItem('token')
-    const downloadUrl = `/api/missions/${missionId}/deliverables/archive`
+    const downloadUrl = `/api/missions/${missionId}/deliverables`
     
     if (token) {
       window.open(`${downloadUrl}?token=${token}`, '_blank')

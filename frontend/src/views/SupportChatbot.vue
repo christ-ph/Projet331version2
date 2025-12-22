@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useChatbotStore } from '@/stores/chatbot'
+import { useChatbotStore } from '@/stores/chatboot'
 import { useAuthStore } from '@/stores/auth'
 
 const chatbotStore = useChatbotStore()

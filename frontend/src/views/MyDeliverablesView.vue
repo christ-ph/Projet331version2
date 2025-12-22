@@ -11,7 +11,7 @@
     </div>
 
     <!-- Bouton Nouveau Livrable (visible uniquement pour le freelance) -->
-    <div v-if="!isClient" class="action-header">
+    <!-- <div v-if="!isClient" class="action-header">
       <button
         @click="showCreateModal = true"
         class="action-btn primary"
@@ -21,7 +21,7 @@
         </svg>
         <span>Nouveau livrable</span>
       </button>
-    </div>
+    </div> -->
 
     <!-- Filtres et recherche -->
     <div class="filters-card">
