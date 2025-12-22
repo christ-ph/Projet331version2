@@ -1,33 +1,41 @@
+version: "3.9"
+
 services:
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: mydatabase
-    volumes:
-      - postgres_data:/var/lib/postgresql/data # <--- C'est ici la PERSISTANCE
+  postgres:
+    image: postgres:16-alpine
+    container_name: freelance_postgres
     ports:
-      - "5432:5432"
+      - "2006:5432"
+    environment:
+      POSTGRES_DB: freelance_db
+      POSTGRES_USER: freelance_user
+      POSTGRES_PASSWORD: strongpassword
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
 
   backend:
-    build:
-      context: ./backend # chemin vers ton dossier backend
-      dockerfile: ../backend.Dockerfile
-    depends_on:
-      - db
-    env_file: .env
+    build: ./backend
+    container_name: freelance_backend
     ports:
-      - "5000:5000"
+      - "5500:5000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./backend/uploads:/app/uploads
+    environment:
+      FLASK_ENV: production
+      DB_URI: postgresql://freelance_user:strongpassword@postgres:5432/freelance_db
+    restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend # chemin vers ton dossier frontend
-      dockerfile: ../frontend.Dockerfile
+    build: ./frontend
+    container_name: freelance_frontend
     ports:
-      - "5173:5173"
+      - "8088:80"
     depends_on:
       - backend
+    restart: unless-stopped
 
 volumes:
-  postgres_data: # Déclaration du volume persistant
+  pgdata:

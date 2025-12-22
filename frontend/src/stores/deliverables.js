@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 
-const API_BASE = 'http://127.0.0.1:5000/api'
-
+//const API_BASE = 'http://127.0.0.1:5000/api'
+const API_BASE = 'http://37.60.250.220:5500/api'
 export const useDeliverablesStore = defineStore('deliverables', {
   state: () => ({
     deliverables: [],
