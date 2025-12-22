@@ -41,8 +41,14 @@ def create_app():
     from app.admin.routes import admin_bp
     app.register_blueprint(admin_bp, url_prefix='/admin')
 
-    # from app.chats.routes import chat_bp
-    # app.register_blueprint(chat_bp) 
-    
+    # Dans app/__init__.py
+    from app.routes.freelancers import freelancers_bp
+
+    # ... après création de l'app Flask ...
+
+    app.register_blueprint(freelancers_bp, url_prefix='/api/freelancers')
+        # from app.chats.routes import chat_bp
+        # app.register_blueprint(chat_bp) 
+        
     return app
     

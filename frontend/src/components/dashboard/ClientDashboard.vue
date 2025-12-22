@@ -1,11 +1,15 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useProfileStore } from '@/stores/profile';
+import { useMissionStore } from '@/stores/missions'; // Note: store missions
+import { useFreelancersStore } from '@/stores/freelancers';
 
 const authStore = useAuthStore();
 const profileStore = useProfileStore();
+const missionStore = useMissionStore(); // Renommé pour correspondre au store
+const freelancersStore = useFreelancersStore();
 const router = useRouter();
 
 // Données réactives
@@ -27,13 +31,20 @@ const stats = ref({
   totalProjects: 0,
   activeProjects: 0,
   completedProjects: 0,
-  totalSpent: 0
+  totalSpent: 0,
+  draftProjects: 0,
+  cancelledProjects: 0
 });
 
 const projects = ref([]);
 const freelancers = ref([]);
 
-// Options pour les selects (gardées pour le formulaire d'édition)
+// Filtres
+const projectFilter = ref('all');
+const freelancerFilter = ref('all');
+const freelancerSearch = ref('');
+
+// Options pour les selects
 const clientTypes = ref([
   { value: 'entreprise', label: 'Entreprise' },
   { value: 'startup', label: 'Startup' },
@@ -69,16 +80,53 @@ const industryLabel = computed(() => {
   return industry ? industry.label : profile.value.industry;
 });
 
-// Filtres
-const projectFilter = ref('all');
-const freelancerFilter = ref('all');
+// Filtres des projets
+const filteredProjects = computed(() => {
+  return missionStore.getFilteredProjects(projectFilter.value);
+});
+
+const filteredFreelancers = computed(() => {
+  let filtered = freelancers.value;
+  
+  // Filtre par recherche
+  if (freelancerSearch.value) {
+    const searchTerm = freelancerSearch.value.toLowerCase();
+    filtered = filtered.filter(f => 
+      f.full_name?.toLowerCase().includes(searchTerm) ||
+      f.title?.toLowerCase().includes(searchTerm) ||
+      f.description?.toLowerCase().includes(searchTerm) ||
+      (f.skills && Array.isArray(f.skills) && 
+        f.skills.some(skill => skill.toLowerCase().includes(searchTerm)))
+    );
+  }
+  
+  // Filtre par disponibilité
+  if (freelancerFilter.value === 'available') {
+    filtered = filtered.filter(f => 
+      f.availability?.toLowerCase() === 'disponible' || 
+      f.availability?.toLowerCase() === 'available'
+    );
+  } else if (freelancerFilter.value === 'top_rated') {
+    filtered = filtered.filter(f => f.rating >= 4);
+  } else if (freelancerFilter.value === 'experienced') {
+    filtered = filtered.filter(f => f.experience_years >= 3);
+  }
+  
+  // Trier par note (meilleurs d'abord)
+  return filtered.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+});
 
 // Fonctions pour charger les données réelles
 async function loadProfile() {
   try {
     const profileData = await profileStore.getMyProfile();
     
-    if (!profileData || profileData.type !== "client") {
+    if (!profileData) {
+      console.error('Aucun profil trouvé');
+      return;
+    }
+
+    if (profileData.type !== "client") {
       router.push('/dashboard');
       return;
     }
@@ -93,75 +141,131 @@ async function loadProfile() {
 
   } catch (error) {
     console.error('Erreur lors du chargement du profil:', error);
+    showNotification('Erreur lors du chargement du profil', 'error');
   }
 }
 
 async function loadProjects() {
   try {
-    // Ici, vous devriez appeler votre API pour récupérer les projets
-    // Exemple: const response = await api.get('/projects');
-    // projects.value = response.data;
+    // Utiliser les méthodes du store
+    await missionStore.fetchMyMissions();
+    projects.value = missionStore.myMissions; // Note: myMissions, pas missions
     
-    // Pour l'instant, on laisse un tableau vide qui sera rempli par votre API
-    projects.value = [];
+    // Utiliser les statistiques du store
+    const dashboardStats = missionStore.getDashboardStats();
+    stats.value = {
+      ...stats.value,
+      ...dashboardStats
+    };
     
-    // Calculer les statistiques
-    stats.value.totalProjects = projects.value.length;
-    stats.value.activeProjects = projects.value.filter(p => p.status === 'en_cours').length;
-    stats.value.completedProjects = projects.value.filter(p => p.status === 'termine').length;
-    stats.value.totalSpent = projects.value
-      .filter(p => p.status === 'termine')
-      .reduce((sum, p) => sum + (p.budget || 0), 0);
-      
+    // Charger les stats client supplémentaires
+    try {
+      const clientStats = await missionStore.fetchClientStats();
+      if (clientStats) {
+        stats.value.totalSpent = clientStats.total_budget || stats.value.totalSpent;
+      }
+    } catch (statsError) {
+      console.log('Stats client non disponibles, utilisation des stats locales');
+    }
+    
   } catch (error) {
     console.error('Erreur lors du chargement des projets:', error);
+    showNotification('Erreur lors du chargement des projets', 'error');
   }
 }
 
 async function loadFreelancers() {
   try {
-    // Ici, vous devriez appeler votre API pour récupérer les freelances
-    // Exemple: const response = await api.get('/freelancers');
-    // freelancers.value = response.data;
-    
-    // Pour l'instant, on laisse un tableau vide qui sera rempli par votre API
-    freelancers.value = [];
+    await freelancersStore.fetchAllFreelancers();
+    freelancers.value = freelancersStore.freelancers;
     
   } catch (error) {
     console.error('Erreur lors du chargement des freelances:', error);
+    showNotification('Erreur lors du chargement des freelances', 'error');
   }
 }
 
-// Chargement des données
-onMounted(async () => {
+// Chargement des données optimisé
+async function loadDashboardData() {
   try {
     loading.value = true;
-    await Promise.all([
-      loadProfile(),
-      loadProjects(),
-      loadFreelancers()
-    ]);
+    
+    // Charger le profil en premier
+    await loadProfile();
+    
+    // Charger les autres données en parallèle si le profil est client
+    if (profile.value.type === "client") {
+      await Promise.all([
+        loadProjects(),
+        loadFreelancers()
+      ]);
+    }
+    
   } catch (error) {
-    console.error('Erreur lors du chargement:', error);
+    console.error('Erreur lors du chargement du dashboard:', error);
+    showNotification('Erreur lors du chargement du dashboard', 'error');
   } finally {
     loading.value = false;
   }
+}
+
+// Initialisation
+onMounted(async () => {
+  await loadDashboardData();
 });
 
-// Fonctions de filtrage
-const filteredProjects = computed(() => {
-  if (projectFilter.value === 'all') return projects.value;
-  return projects.value.filter(project => {
-    if (projectFilter.value === 'en_cours') return project.status === 'en_cours';
-    if (projectFilter.value === 'termine') return project.status === 'termine';
-    if (projectFilter.value === 'en_attente') return project.status === 'en_attente';
-    return true;
-  });
-});
+// Fonctions de navigation
+function navigateTo(path) {
+  router.push(path);
+}
 
-const filteredFreelancers = computed(() => {
-  return freelancers.value;
-});
+function viewMission(missionId) {
+  navigateTo(`/mission/${missionId}`);
+}
+
+function viewFreelancer(freelancerId) {
+  navigateTo(`/freelancer/${freelancerId}`);
+}
+
+function startChatWithFreelancer(freelancerId) {
+  navigateTo(`/chat?freelancer=${freelancerId}`);
+}
+
+// Fonctions de mission
+async function publishMission(missionId) {
+  try {
+    await missionStore.publishMission(missionId);
+    await loadProjects(); // Recharger les projets
+    showNotification('Mission publiée avec succès !', 'success');
+  } catch (error) {
+    console.error('Erreur publication mission:', error);
+    showNotification(error.message || 'Erreur lors de la publication', 'error');
+  }
+}
+
+async function deleteMission(missionId) {
+  if (confirm('Êtes-vous sûr de vouloir supprimer cette mission ? Cette action est irréversible.')) {
+    try {
+      await missionStore.deleteMission(missionId);
+      await loadProjects(); // Recharger les projets
+      showNotification('Mission supprimée avec succès !', 'success');
+    } catch (error) {
+      console.error('Erreur suppression mission:', error);
+      showNotification(error.message || 'Erreur lors de la suppression', 'error');
+    }
+  }
+}
+
+async function updateMissionStatus(missionId, status) {
+  try {
+    await missionStore.changeMissionStatus(missionId, status);
+    await loadProjects(); // Recharger les projets
+    showNotification(`Statut mis à jour: ${getStatusLabel(status)}`, 'success');
+  } catch (error) {
+    console.error('Erreur changement statut mission:', error);
+    showNotification(error.message || 'Erreur lors du changement de statut', 'error');
+  }
+}
 
 // Modal functions
 function openEditProfile() {
@@ -186,22 +290,167 @@ async function saveProfile() {
     closeEditProfile();
   } catch (error) {
     console.error('Erreur mise à jour profil:', error);
-    showNotification('Erreur lors de la mise à jour du profil', 'error');
+    showNotification(error.message || 'Erreur lors de la mise à jour du profil', 'error');
   }
 }
 
-function navigateTo(path) {
-  router.push(path);
+// Fonctions d'export
+async function exportProjects(format = 'pdf', missionId = null) {
+  try {
+    await missionStore.exportMissions(format, missionId);
+    showNotification(`Export ${format.toUpperCase()} réalisé avec succès !`, 'success');
+  } catch (error) {
+    console.error('Erreur export:', error);
+    showNotification(error.message || 'Erreur lors de l\'export', 'error');
+  }
+}
+
+// Fonction pour formater les dates
+function formatDate(dateString) {
+  if (!dateString) return 'Non spécifié';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+}
+
+// Fonction pour obtenir le label du statut
+function getStatusLabel(status) {
+  const labels = {
+    draft: 'Brouillon',
+    open: 'Publié',
+    in_progress: 'En cours',
+    completed: 'Terminé',
+    cancelled: 'Annulé'
+  };
+  return labels[status] || status;
+}
+
+// Fonction pour obtenir la couleur du statut
+function getStatusColor(status) {
+  const colors = {
+    draft: '#6c757d',
+    open: '#28a745',
+    in_progress: '#007bff',
+    completed: '#17a2b8',
+    cancelled: '#dc3545'
+  };
+  return colors[status] || '#6c757d';
+}
+
+// Fonction pour obtenir la couleur de fond du statut
+function getStatusBgColor(status) {
+  const bgColors = {
+    draft: 'rgba(108, 117, 125, 0.1)',
+    open: 'rgba(40, 167, 69, 0.1)',
+    in_progress: 'rgba(0, 123, 255, 0.1)',
+    completed: 'rgba(23, 162, 184, 0.1)',
+    cancelled: 'rgba(220, 53, 69, 0.1)'
+  };
+  return bgColors[status] || 'rgba(108, 117, 125, 0.1)';
 }
 
 // Notification
-const notification = ref({ show: false, message: '', type: '' });
+const notification = reactive({ show: false, message: '', type: '' });
 
 function showNotification(message, type = 'success') {
-  notification.value = { show: true, message, type };
+  notification.show = true;
+  notification.message = message;
+  notification.type = type;
+  
   setTimeout(() => {
-    notification.value.show = false;
+    notification.show = false;
   }, 3000);
+}
+
+// Fonction pour charger plus de freelances
+async function loadMoreFreelancers() {
+  try {
+    const currentPage = freelancersStore.pagination.page;
+    await freelancersStore.searchFreelancers({ 
+      page: currentPage + 1,
+      per_page: 20
+    });
+    
+    // Ajouter les nouveaux freelances à la liste
+    freelancers.value = [...freelancers.value, ...freelancersStore.freelancers];
+    showNotification(`${freelancersStore.freelancers.length} freelances supplémentaires chargés`, 'info');
+  } catch (error) {
+    console.error('Erreur lors du chargement des freelances supplémentaires:', error);
+    showNotification('Erreur lors du chargement des freelances supplémentaires', 'error');
+  }
+}
+
+// Fonction de recherche de freelances avec debounce
+let searchTimeout = null;
+async function searchFreelancers() {
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+  }
+  
+  searchTimeout = setTimeout(async () => {
+    try {
+      if (freelancerSearch.value.trim()) {
+        await freelancersStore.searchFreelancers({ q: freelancerSearch.value });
+        freelancers.value = freelancersStore.freelancers;
+        showNotification(`${freelancers.value.length} freelances trouvés`, 'info');
+      } else {
+        // Si la recherche est vide, recharger tous les freelances
+        await freelancersStore.fetchAllFreelancers();
+        freelancers.value = freelancersStore.freelancers;
+      }
+    } catch (error) {
+      console.error('Erreur lors de la recherche:', error);
+      showNotification('Erreur lors de la recherche de freelances', 'error');
+    }
+  }, 500); // 500ms de délai
+}
+
+// Fonction pour rafraîchir toutes les données
+async function refreshDashboard() {
+  try {
+    loading.value = true;
+    showNotification('Rafraîchissement des données...', 'info');
+    
+    await Promise.all([
+      loadProfile(),
+      loadProjects(),
+      loadFreelancers()
+    ]);
+    
+    showNotification('Données rafraîchies avec succès !', 'success');
+  } catch (error) {
+    console.error('Erreur rafraîchissement dashboard:', error);
+    showNotification('Erreur lors du rafraîchissement', 'error');
+  } finally {
+    loading.value = false;
+  }
+}
+
+// Fonction pour créer une nouvelle mission
+function createNewMission() {
+  navigateTo('/mission/create');
+}
+
+// Fonction pour formater le budget
+function formatBudget(budget) {
+  if (!budget) return 'Non spécifié';
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'XOF',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(budget);
+}
+
+// Fonction pour obtenir les compétences d'une mission
+function getMissionSkills(mission) {
+  if (!mission.required_skills || !Array.isArray(mission.required_skills)) {
+    return [];
+  }
+  return mission.required_skills.slice(0, 3); // Maximum 3 compétences
 }
 </script>
 
@@ -288,7 +537,7 @@ function showNotification(message, type = 'success') {
                 <i class="fas fa-edit"></i>
                 Modifier le profil
               </button>
-              <button class="action-btn outline-btn" @click="navigateTo('/missions/create')">
+              <button class="action-btn outline-btn" @click="navigateTo('/mission/create')">
                 <i class="fas fa-plus"></i>
                 Nouveau projet
               </button>
@@ -399,7 +648,7 @@ function showNotification(message, type = 'success') {
             </div>
             <div class="card-content">
               <div class="actions-grid">
-                <button class="action-card" @click="navigateTo('/missions/create')">
+                <button class="action-card" @click="navigateTo('/mission/create')">
                   <div class="action-icon">
                     <i class="fas fa-plus-circle"></i>
                   </div>
@@ -409,7 +658,7 @@ function showNotification(message, type = 'success') {
                   </div>
                 </button>
                 
-                <button class="action-card" @click="navigateTo('/freelances')">
+                <button class="action-card" @click="activeTab = 'freelancers'">
                   <div class="action-icon">
                     <i class="fas fa-search"></i>
                   </div>
@@ -419,7 +668,7 @@ function showNotification(message, type = 'success') {
                   </div>
                 </button>
                 
-                <button class="action-card" @click="navigateTo('/messages')">
+                <button class="action-card" @click="navigateTo('/chat')">
                   <div class="action-icon">
                     <i class="fas fa-comments"></i>
                   </div>
@@ -450,16 +699,21 @@ function showNotification(message, type = 'success') {
           <div>
             <h2 class="section-title">
               <i class="fas fa-briefcase"></i>
-              Tous les Projets
+              Mes Projets
             </h2>
             <p class="section-subtitle">
-              {{ projects.length }} projet{{ projects.length !== 1 ? 's' : '' }} disponible{{ projects.length !== 1 ? 's' : '' }}
+              {{ stats.totalProjects }} projet{{ stats.totalProjects !== 1 ? 's' : '' }} au total
             </p>
           </div>
-          <button class="add-project-btn" @click="navigateTo('/missions/create')">
-            <i class="fas fa-plus"></i>
-            Nouveau projet
-          </button>
+          <div class="section-actions">
+            <button class="action-btn outline-btn" @click="exportProjects('pdf')" title="Exporter en PDF">
+              <i class="fas fa-file-pdf"></i>
+            </button>
+            <button class="add-project-btn" @click="navigateTo('/mission/create')">
+              <i class="fas fa-plus"></i>
+              Nouveau projet
+            </button>
+          </div>
         </div>
 
         <div v-if="projects.length === 0" class="empty-state">
@@ -468,7 +722,7 @@ function showNotification(message, type = 'success') {
           </div>
           <h3>Aucun projet disponible</h3>
           <p>Commencez par créer votre premier projet pour trouver des freelances talentueux</p>
-          <button class="action-btn primary-btn" @click="navigateTo('/missions/create')">
+          <button class="action-btn primary-btn" @click="navigateTo('/mission/create')">
             <i class="fas fa-plus"></i>
             Créer un projet
           </button>
@@ -485,24 +739,24 @@ function showNotification(message, type = 'success') {
             </button>
             <button 
               class="filter-btn" 
-              :class="{ 'active': projectFilter === 'en_cours' }"
-              @click="projectFilter = 'en_cours'"
+              :class="{ 'active': projectFilter === 'active' }"
+              @click="projectFilter = 'active'"
             >
-              En cours ({{ projects.filter(p => p.status === 'en_cours').length }})
+              Actifs ({{ stats.activeProjects }})
             </button>
             <button 
               class="filter-btn" 
-              :class="{ 'active': projectFilter === 'termine' }"
-              @click="projectFilter = 'termine'"
+              :class="{ 'active': projectFilter === 'completed' }"
+              @click="projectFilter = 'completed'"
             >
-              Terminés ({{ projects.filter(p => p.status === 'termine').length }})
+              Terminés ({{ stats.completedProjects }})
             </button>
             <button 
               class="filter-btn" 
-              :class="{ 'active': projectFilter === 'en_attente' }"
-              @click="projectFilter = 'en_attente'"
+              :class="{ 'active': projectFilter === 'draft' }"
+              @click="projectFilter = 'draft'"
             >
-              En attente ({{ projects.filter(p => p.status === 'en_attente').length }})
+              Brouillons ({{ projects.filter(p => p.status === 'draft').length }})
             </button>
           </div>
 
@@ -511,52 +765,82 @@ function showNotification(message, type = 'success') {
               v-for="project in filteredProjects" 
               :key="project.id" 
               class="project-card"
-              @click="navigateTo(`/project/${project.id}`)"
             >
               <div class="project-header">
                 <div class="project-status-badge" :class="project.status">
-                  {{ project.status === 'en_cours' ? 'En cours' : 
-                     project.status === 'termine' ? 'Terminé' : 'En attente' }}
+                  {{ 
+                    project.status === 'draft' ? 'Brouillon' :
+                    project.status === 'open' ? 'Publié' :
+                    project.status === 'in_progress' ? 'En cours' :
+                    project.status === 'completed' ? 'Terminé' : 'Annulé'
+                  }}
                 </div>
                 <div class="project-actions">
-                  <button class="icon-btn">
-                    <i class="fas fa-ellipsis-v"></i>
-                  </button>
+                  <div class="dropdown">
+                    <button class="icon-btn">
+                      <i class="fas fa-ellipsis-v"></i>
+                    </button>
+                    <div class="dropdown-menu">
+                      <button @click="viewMission(project.id)" class="dropdown-item">
+                        <i class="fas fa-eye"></i> Voir détails
+                      </button>
+                      <button v-if="project.status === 'draft'" 
+                        @click="publishMission(project.id)" 
+                        class="dropdown-item">
+                        <i class="fas fa-paper-plane"></i> Publier
+                      </button>
+                      <button v-if="project.status === 'draft' || project.status === 'open'" 
+                        @click="navigateTo(`/mission/edit/${project.id}`)" 
+                        class="dropdown-item">
+                        <i class="fas fa-edit"></i> Modifier
+                      </button>
+                      <button v-if="project.status === 'draft'" 
+                        @click="deleteMission(project.id)" 
+                        class="dropdown-item text-danger">
+                        <i class="fas fa-trash"></i> Supprimer
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
               
               <h3 class="project-title">{{ project.title }}</h3>
-              
-              <div class="project-freelancer-info" v-if="project.freelancer">
-                <div class="freelancer-avatar small">
-                  {{ project.freelancer.name?.charAt(0) || 'F' }}
-                </div>
-                <div class="freelancer-details">
-                  <p class="freelancer-name">{{ project.freelancer.name || 'Freelance' }}</p>
-                  <p class="project-deadline" v-if="project.deadline">
-                    <i class="far fa-calendar-alt"></i>
-                    {{ project.deadline }}
-                  </p>
-                </div>
-              </div>
+              <p class="project-description" v-if="project.description">
+                {{ project.description.substring(0, 150) }}...
+              </p>
               
               <div class="project-meta">
                 <div class="meta-item" v-if="project.budget">
                   <i class="fas fa-money-bill-wave"></i>
                   <span>{{ project.budget.toLocaleString() }} FCFA</span>
                 </div>
-                <div class="meta-item" v-if="project.created_at">
+                <div class="meta-item" v-if="project.deadline">
+                  <i class="far fa-calendar-alt"></i>
+                  <span>{{ new Date(project.deadline).toLocaleDateString() }}</span>
+                </div>
+                <div class="meta-item">
                   <i class="fas fa-clock"></i>
-                  <span>{{ project.created_at }}</span>
+                  <span>{{ new Date(project.created_at).toLocaleDateString() }}</span>
                 </div>
               </div>
               
+              <div class="project-skills" v-if="project.required_skills && project.required_skills.length > 0">
+                <span v-for="skill in project.required_skills.slice(0, 3)" :key="skill" class="skill-tag">
+                  {{ skill }}
+                </span>
+                <span v-if="project.required_skills.length > 3" class="skill-tag more">
+                  +{{ project.required_skills.length - 3 }}
+                </span>
+              </div>
+              
               <div class="project-actions-footer">
-                <button class="action-btn outline-btn small" @click.stop="navigateTo(`/project/${project.id}`)">
+                <button class="action-btn outline-btn small" @click="viewMission(project.id)">
                   <i class="fas fa-eye"></i>
                   Voir détails
                 </button>
-                <button class="action-btn primary-btn small" @click.stop="navigateTo(`/messages?project=${project.id}`)">
+                <button v-if="project.status === 'in_progress'" 
+                  class="action-btn primary-btn small" 
+                  @click="navigateTo(`/chat/${useAuthStore().user.id}`)">
                   <i class="fas fa-comment"></i>
                   Message
                 </button>
@@ -578,10 +862,24 @@ function showNotification(message, type = 'success') {
               {{ freelancers.length }} freelance{{ freelancers.length !== 1 ? 's' : '' }} disponible{{ freelancers.length !== 1 ? 's' : '' }}
             </p>
           </div>
-          <button class="add-project-btn" @click="navigateTo('/freelances')">
-            <i class="fas fa-search"></i>
-            Voir tous
-          </button>
+          <div class="search-bar">
+            <div class="search-input-container">
+              <i class="fas fa-search"></i>
+              <input 
+                type="text" 
+                v-model="freelancerSearch" 
+                @input="searchFreelancers"
+                placeholder="Rechercher un freelance..."
+                class="search-input"
+              />
+            </div>
+            <select v-model="freelancerFilter" class="filter-select">
+              <option value="all">Tous</option>
+              <option value="top_rated">Top notés (4+ étoiles)</option>
+              <option value="experienced">Expérimentés (3+ ans)</option>
+              <option value="available">Disponibles</option>
+            </select>
+          </div>
         </div>
 
         <div v-if="freelancers.length === 0" class="empty-state">
@@ -600,15 +898,17 @@ function showNotification(message, type = 'success') {
           >
             <div class="freelancer-header">
               <div class="freelancer-avatar large">
-                {{ freelancer.name?.charAt(0)?.toUpperCase() || 'F' }}
+                {{ freelancer.full_name?.charAt(0)?.toUpperCase() || 'F' }}
               </div>
-              <div class="freelancer-rating-badge" v-if="freelancer.rating">
+              <div class="freelancer-rating" v-if="freelancer.rating">
                 <i class="fas fa-star"></i>
-                {{ freelancer.rating }}
+                <span>{{ freelancer.rating.toFixed(1) }}</span>
+                <span class="rating-count">({{ freelancer.completed_projects || 0 }})</span>
               </div>
             </div>
             
-            <h3 class="freelancer-name">{{ freelancer.name || 'Freelance' }}</h3>
+            <h3 class="freelancer-name">{{ freelancer.full_name || 'Freelance' }}</h3>
+            <p class="freelancer-title">{{ freelancer.title || 'Freelance' }}</p>
             
             <div class="freelancer-skills-list" v-if="freelancer.skills && freelancer.skills.length > 0">
               <span v-for="skill in freelancer.skills.slice(0, 3)" :key="skill" class="skill-tag">
@@ -620,31 +920,55 @@ function showNotification(message, type = 'success') {
             </div>
             
             <div class="freelancer-stats">
-              <div class="stat" v-if="freelancer.projects_count">
-                <span class="stat-number">{{ freelancer.projects_count }}</span>
-                <span class="stat-label">projets</span>
+              <div class="stat">
+                <i class="fas fa-money-bill"></i>
+                <div>
+                  <span class="stat-number">{{ freelancer.hourly_rate?.toLocaleString() || 'N/A' }}</span>
+                  <span class="stat-label">FCFA/h</span>
+                </div>
               </div>
-              <div class="stat" v-if="freelancer.success_rate">
-                <span class="stat-number">{{ freelancer.success_rate }}%</span>
-                <span class="stat-label">réussite</span>
+              <div class="stat">
+                <i class="fas fa-history"></i>
+                <div>
+                  <span class="stat-number">{{ freelancer.experience_years || 0 }}</span>
+                  <span class="stat-label">ans</span>
+                </div>
               </div>
-              <div class="stat" v-if="freelancer.experience">
-                <span class="stat-number">{{ freelancer.experience }}</span>
-                <span class="stat-label">ans</span>
+              <div class="stat">
+                <i class="fas fa-check-circle"></i>
+                <div>
+                  <span class="stat-number">{{ freelancer.completed_projects || 0 }}</span>
+                  <span class="stat-label">projets</span>
+                </div>
               </div>
             </div>
             
             <div class="freelancer-actions">
-              <button class="action-btn outline-btn" @click="navigateTo(`/freelancer/${freelancer.id}`)">
+              <button class="action-btn outline-btn" @click="viewFreelancer(freelancer.id)">
                 <i class="fas fa-eye"></i>
                 Voir profil
               </button>
-              <button class="action-btn primary-btn" @click="navigateTo(`/messages?freelancer=${freelancer.id}`)">
+              <button class="action-btn primary-btn" @click="startChatWithFreelancer(freelancer.id)">
                 <i class="fas fa-comment"></i>
                 Contacter
               </button>
             </div>
           </div>
+        </div>
+
+        <!-- Bouton charger plus -->
+        <div v-if="freelancersStore.pagination.page < freelancersStore.pagination.pages" 
+          class="load-more-container">
+          <button class="load-more-btn" @click="loadMoreFreelancers" :disabled="freelancersStore.loading">
+            <span v-if="freelancersStore.loading">
+              <i class="fas fa-spinner fa-spin"></i>
+              Chargement...
+            </span>
+            <span v-else>
+              <i class="fas fa-plus"></i>
+              Charger plus de freelances
+            </span>
+          </button>
         </div>
       </div>
     </div>
@@ -2173,4 +2497,236 @@ function showNotification(message, type = 'success') {
     color: #a0a0a0;
   }
 }
+
+
+
+.section-actions {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
+.search-bar {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
+.search-input-container {
+  position: relative;
+  flex: 1;
+  max-width: 400px;
+}
+
+.search-input-container i {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #6c757d;
+}
+
+.search-input {
+  width: 100%;
+  padding: 12px 20px 12px 45px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #FF6B35;
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
+}
+
+.filter-select {
+  padding: 12px 20px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: white;
+  color: #2D3047;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #FF6B35;
+}
+
+.project-description {
+  color: #6c757d;
+  margin: 10px 0 15px 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.project-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 15px 0;
+}
+
+.skill-tag {
+  padding: 6px 12px;
+  background: #f1f5f9;
+  color: #2D3047;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.skill-tag.more {
+  background: #FF6B35;
+  color: white;
+}
+
+.freelancer-title {
+  color: #6c757d;
+  font-size: 0.95rem;
+  margin: 5px 0 15px 0;
+  text-align: center;
+}
+
+.freelancer-rating {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #f8f9fa;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-weight: 600;
+  color: #2D3047;
+}
+
+.freelancer-rating i {
+  color: #FFC107;
+}
+
+.rating-count {
+  color: #6c757d;
+  font-size: 0.85rem;
+}
+
+.freelancer-stats {
+  display: flex;
+  justify-content: space-around;
+  margin: 20px 0;
+  gap: 15px;
+}
+
+.freelancer-stats .stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.freelancer-stats .stat i {
+  color: #FF6B35;
+  font-size: 1rem;
+}
+
+.freelancer-stats .stat-number {
+  font-weight: 700;
+  color: #2D3047;
+  display: block;
+  font-size: 0.9rem;
+}
+
+.freelancer-stats .stat-label {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  border: 1px solid #e5e7eb;
+  min-width: 180px;
+  z-index: 10;
+  display: none;
+  padding: 8px 0;
+}
+
+.dropdown:hover .dropdown-menu {
+  display: block;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 15px;
+  background: none;
+  border: none;
+  text-align: left;
+  color: #2D3047;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dropdown-item:hover {
+  background: #f8f9fa;
+  color: #FF6B35;
+}
+
+.dropdown-item i {
+  width: 16px;
+}
+
+.dropdown-item.text-danger {
+  color: #EF4444;
+}
+
+.dropdown-item.text-danger:hover {
+  color: #DC2626;
+  background: #FEE2E2;
+}
+
+.load-more-container {
+  text-align: center;
+  margin-top: 40px;
+  padding: 20px 0;
+}
+
+.load-more-btn {
+  padding: 12px 30px;
+  background: linear-gradient(135deg, #FF6B35, #FF8E53);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.load-more-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 30px rgba(255, 107, 53, 0.3);
+}
+
+.load-more-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+
 </style>
